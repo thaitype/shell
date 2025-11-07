@@ -31,6 +31,8 @@ export interface ShellOptions {
    * @default "simple"
    */
   throwMode?: 'simple' | 'raw';
+  /** Optional custom logger function for command output */
+  logger?: (message: string) => void;
 }
 
 /** Options for an individual command execution */
@@ -61,6 +63,7 @@ export class Shell {
   private verbose: boolean;
   private throwOnError: boolean;
   private throwMode: 'simple' | 'raw';
+  private logger?: (message: string) => void;
 
   /**
    * Create a new Shell instance.
@@ -72,6 +75,7 @@ export class Shell {
     this.verbose = options.verbose ?? false;
     this.throwOnError = options.throwOnError ?? true; // default true
     this.throwMode = options.throwMode ?? 'simple'; // default "simple"
+    this.logger = options.logger ?? console.log;
   }
 
   /**
@@ -99,7 +103,7 @@ export class Shell {
     };
 
     if (this.verbose || this.dryRun) {
-      console.log(`$ ${args.join(' ')}`);
+      this.logger?.(`$ ${args.join(' ')}`);
     }
 
     if (this.dryRun) {
