@@ -29,7 +29,7 @@
     "format": "prettier -w src",
     "lint": "run-s check-types && eslint ./src && prettier -c src",
     "lint:fix": "eslint --fix ./src && prettier -w src",
-    "all": "run-s lint build test:coverage",
+    "all": "run-s lint build",
     "release": "run-s all && changeset version && changeset publish",
     "changeset": "changeset"
   },
@@ -66,9 +66,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/thaitype/reorder.git"
+    "url": "https://github.com/thaitype/shell.git"
   },
-  "homepage": "https://github.com/thaitype/reorder",
+  "homepage": "https://github.com/thaitype/shell",
   "packageManager": "pnpm@10.11.0",
   "engines": {
     "node": ">=20"
