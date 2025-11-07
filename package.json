@@ -47,8 +47,6 @@
     "eslint": "^9.23.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-only-warn": "^1.1.0",
-    "mongodb": "^6.17.0",
-    "mongodb-memory-server": "^10.1.4",
     "npm-run-all2": "^8.0.4",
     "prettier": "^3.5.3",
     "tsup": "^8.4.0",
