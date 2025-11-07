@@ -1,7 +1,7 @@
-# @thaitype/reorder
+# @thaitype/shell
 
 
-[![CI](https://github.com/thaitype/reorder/actions/workflows/main.yml/badge.svg)](https://github.com/thaitype/reorder/actions/workflows/main.yml) [![codecov](https://codecov.io/gh/thaitype/reorder/graph/badge.svg?token=B7MCHM57BH)](https://codecov.io/gh/thaitype/reorder) [![NPM Version](https://img.shields.io/npm/v/@thaitype/reorder) ](https://www.npmjs.com/package/@thaitype/reorder)[![npm downloads](https://img.shields.io/npm/dt/@thaitype/reorder)](https://www.npmjs.com/@thaitype/reorder) 
+[![CI](https://github.com/thaitype/reorder/actions/workflows/main.yml/badge.svg)](https://github.com/thaitype/reorder/actions/workflows/main.yml) [![codecov](https://codecov.io/gh/thaitype/reorder/graph/badge.svg?token=B7MCHM57BH)](https://codecov.io/gh/thaitype/reorder) [![NPM Version](https://img.shields.io/npm/v/@thaitype/shell) ](https://www.npmjs.com/package/@thaitype/shell)[![npm downloads](https://img.shields.io/npm/dt/@thaitype/shell)](https://www.npmjs.com/@thaitype/shell) 
 
 
 > Pure reorder function for consistent and testable item ordering based on the `order` field.
@@ -17,9 +17,9 @@
 ## 📦 Installation
 
 ```bash
-npm install @thaitype/reorder
+npm install @thaitype/shell
 # or
-pnpm add @thaitype/reorder
+pnpm add @thaitype/shell
 ````
 
 ## 🧠 Use Case

@@ -26,7 +26,7 @@
     // absolute imports
     "baseUrl": ".",
     "paths": {
-      "@thaitype/reorder": ["src/index.ts"],
+      "@thaitype/shell": ["src/index.ts"],
     }
   },
    "exclude": [
