@@ -74,9 +74,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@standard-schema/spec": "^1.0.0",
     "execa": "^9.6.0",
-    "string-argv": "^0.3.2",
-    "zod": "^4.0.5"
+    "string-argv": "^0.3.2"
   }
 }
