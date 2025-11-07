@@ -92,7 +92,7 @@ export class Shell {
 
     const mode = options?.outputMode ?? this.defaultMode;
 
-    const stdioMap: Record<OutputMode, { stdout: any; stderr: any }> = {
+    const stdioMap: Record<OutputMode, { stdout: string | string[]; stderr: string | string[] }> = {
       capture: { stdout: "pipe", stderr: "pipe" },
       live: { stdout: "inherit", stderr: "inherit" },
       all: { stdout: ["pipe", "inherit"], stderr: ["pipe", "inherit"] },
