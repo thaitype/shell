@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/esm",
+    "declarationDir": "dist/dts",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noEmit": false
+  },
+  "exclude": [
+    "coverage",
+    "vitest.config.ts",
+    "eslint.config.mjs",
+    "scripts",
+    "node_modules",
+    "dist",
+    "doc",
+    "examples",
+    "test",
+    "tsconfig.build.json",
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+  ]
+}

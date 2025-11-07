@@ -1,0 +1,83 @@
+{
+  "name": "@thaitype/shell",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/dts/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/dts/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "default": "./dist/cjs/index.js"
+    }
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:report": "npx uncoverage coverage/coverage-final.json --print",
+    "test:coverage:feedback": "run-s test:coverage test:coverage:report",
+    "test": "vitest",
+    "test:ci": "vitest run",
+    "check-types": "tsc --noEmit",
+    "build": "run-s format && run-s build-esm && run-s build-cjs && run-s build-annotate",
+    "build-esm": "tsc -b tsconfig.build.json",
+    "build-cjs": "babel dist/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir dist/cjs --source-maps",
+    "build-annotate": "babel dist --plugins annotate-pure-calls --out-dir dist --source-maps",
+    "format": "prettier -w src",
+    "lint": "run-s check-types && eslint ./src && prettier -c src",
+    "lint:fix": "eslint --fix ./src && prettier -w src",
+    "all": "run-s lint build test:coverage",
+    "release": "run-s all && changeset version && changeset publish",
+    "changeset": "changeset"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.5",
+    "@babel/core": "^7.24.5",
+    "@babel/plugin-transform-export-namespace-from": "^7.24.1",
+    "@babel/plugin-transform-modules-commonjs": "^7.24.1",
+    "@changesets/cli": "^2.29.5",
+    "@eslint/js": "^9.23.0",
+    "@typescript-eslint/eslint-plugin": "^8.27.0",
+    "@vitest/coverage-istanbul": "^3.2.4",
+    "babel-plugin-annotate-pure-calls": "^0.4.0",
+    "eslint": "^9.23.0",
+    "eslint-config-prettier": "^10.1.1",
+    "eslint-plugin-only-warn": "^1.1.0",
+    "mongodb": "^6.17.0",
+    "mongodb-memory-server": "^10.1.4",
+    "npm-run-all2": "^8.0.4",
+    "prettier": "^3.5.3",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.27.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [],
+  "author": "Thada Wangthammang",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thaitype/reorder.git"
+  },
+  "homepage": "https://github.com/thaitype/reorder",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "^1.0.0",
+    "zod": "^4.0.5"
+  }
+}
