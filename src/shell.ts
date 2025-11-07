@@ -7,11 +7,11 @@
  * const result = await shell.run("bash delay.sh");
  * if (result.isSuccess) console.log(result.stdout);
  */
-import { execa, type Options as ExecaOptions, ExecaError } from "execa";
-import parseArgsStringToArgv from "string-argv";
+import { execa, type Options as ExecaOptions, ExecaError } from 'execa';
+import parseArgsStringToArgv from 'string-argv';
 
 /** Output mode behavior for handling stdout/stderr */
-export type OutputMode = "capture" | "live" | "all";
+export type OutputMode = 'capture' | 'live' | 'all';
 
 /** Configuration options for Shell instance */
 export interface ShellOptions {
@@ -30,7 +30,7 @@ export interface ShellOptions {
    *
    * @default "simple"
    */
-  throwMode?: "simple" | "raw";
+  throwMode?: 'simple' | 'raw';
 }
 
 /** Options for an individual command execution */
@@ -60,18 +60,18 @@ export class Shell {
   private dryRun: boolean;
   private verbose: boolean;
   private throwOnError: boolean;
-  private throwMode: "simple" | "raw";
+  private throwMode: 'simple' | 'raw';
 
   /**
    * Create a new Shell instance.
    * @param options - Configuration options for default behavior.
    */
   constructor(options: ShellOptions = {}) {
-    this.defaultMode = options.defaultMode ?? "capture";
+    this.defaultMode = options.defaultMode ?? 'capture';
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
     this.throwOnError = options.throwOnError ?? true; // default true
-    this.throwMode = options.throwMode ?? "simple"; // default "simple"
+    this.throwMode = options.throwMode ?? 'simple'; // default "simple"
   }
 
   /**
@@ -87,23 +87,23 @@ export class Shell {
 
     const [program, ...cmdArgs] = args;
     if (!program) {
-      throw new Error("No command provided.");
+      throw new Error('No command provided.');
     }
 
     const mode = options?.outputMode ?? this.defaultMode;
 
     const stdioMap: Record<OutputMode, { stdout: string | string[]; stderr: string | string[] }> = {
-      capture: { stdout: "pipe", stderr: "pipe" },
-      live: { stdout: "inherit", stderr: "inherit" },
-      all: { stdout: ["pipe", "inherit"], stderr: ["pipe", "inherit"] },
+      capture: { stdout: 'pipe', stderr: 'pipe' },
+      live: { stdout: 'inherit', stderr: 'inherit' },
+      all: { stdout: ['pipe', 'inherit'], stderr: ['pipe', 'inherit'] },
     };
 
     if (this.verbose || this.dryRun) {
-      console.log(`$ ${args.join(" ")}`);
+      console.log(`$ ${args.join(' ')}`);
     }
 
     if (this.dryRun) {
-      return { stdout: "", stderr: "", exitCode: 0, isError: false, isSuccess: true };
+      return { stdout: '', stderr: '', exitCode: 0, isError: false, isSuccess: true };
     }
 
     try {
@@ -120,14 +120,13 @@ export class Shell {
         isError: result.exitCode !== 0,
         isSuccess: result.exitCode === 0,
       };
-
     } catch (error: unknown) {
       if (error instanceof ExecaError) {
         if (this.throwOnError || options?.throwOnError) {
-          if (this.throwMode === "raw") {
+          if (this.throwMode === 'raw') {
             throw error;
           } else {
-            throw new Error(`Command failed: ${args.join(" ")}\nExit code: ${error.exitCode}\n${error.stderr || ""}`);
+            throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${error.exitCode}\n${error.stderr || ''}`);
           }
         }
       } else {
@@ -141,7 +140,5 @@ export class Shell {
         isSuccess: false,
       };
     }
-
-
   }
 }

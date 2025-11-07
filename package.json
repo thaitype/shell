@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "./dist/cjs/index.js",
+  "main": "./dist/esm/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/dts/index.d.ts",
   "exports": {
@@ -11,7 +11,7 @@
     ".": {
       "types": "./dist/dts/index.d.ts",
       "import": "./dist/esm/index.js",
-      "default": "./dist/cjs/index.js"
+      "default": "./dist/esm/index.js"
     }
   },
   "scripts": {
@@ -23,9 +23,8 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "check-types": "tsc --noEmit",
-    "build": "run-s format && run-s build-esm && run-s build-cjs && run-s build-annotate",
+    "build": "run-s format && run-s build-esm && run-s build-annotate",
     "build-esm": "tsc -b tsconfig.build.json",
-    "build-cjs": "babel dist/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir dist/cjs --source-maps",
     "build-annotate": "babel dist --plugins annotate-pure-calls --out-dir dist --source-maps",
     "format": "prettier -w src",
     "lint": "run-s check-types && eslint ./src && prettier -c src",
