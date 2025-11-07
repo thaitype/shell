@@ -29,7 +29,7 @@
     "format": "prettier -w src",
     "lint": "run-s check-types && eslint ./src && prettier -c src",
     "lint:fix": "eslint --fix ./src && prettier -w src",
-    "all": "run-s lint build",
+    "all": "run-s lint build test:ci",
     "release": "run-s all && changeset version && changeset publish",
     "changeset": "changeset"
   },
