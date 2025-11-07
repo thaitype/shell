@@ -165,7 +165,7 @@ Creates a new Shell instance with the specified configuration.
 ```typescript
 interface ShellOptions {
   /** Default output mode applied to all runs unless overridden */
-  defaultMode?: OutputMode; // 'capture' | 'live' | 'all'
+  defaultOutputMode?: OutputMode; // 'capture' | 'live' | 'all'
 
   /** If true, print commands but skip actual execution */
   dryRun?: boolean;

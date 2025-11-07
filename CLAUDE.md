@@ -50,7 +50,7 @@ The `Shell` class (`src/shell.ts`) is the only export and implements:
 
 ### Key Interfaces
 
-- `ShellOptions`: Constructor configuration (defaultMode, dryRun, verbose, throwOnError, throwMode, logger)
+- `ShellOptions`: Constructor configuration (defaultOutputMode, dryRun, verbose, throwOnError, throwMode, logger)
 - `RunOptions`: Per-command overrides, extends `ExecaOptions` from execa
 - `RunResult`: Structured return value (stdout, stderr, exitCode, isError, isSuccess)
 

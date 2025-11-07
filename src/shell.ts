@@ -16,7 +16,7 @@ export type OutputMode = 'capture' | 'live' | 'all';
 /** Configuration options for Shell instance */
 export interface ShellOptions {
   /** Default output mode applied to all runs unless overridden */
-  defaultMode?: OutputMode;
+  defaultOutputMode?: OutputMode;
   /** If true, print commands but skip actual execution */
   dryRun?: boolean;
   /** If true, log every executed command */
@@ -58,7 +58,7 @@ export interface RunResult {
 }
 
 export class Shell {
-  private defaultMode: OutputMode;
+  private defaultOutputMode: OutputMode;
   private dryRun: boolean;
   private verbose: boolean;
   private throwOnError: boolean;
@@ -70,7 +70,7 @@ export class Shell {
    * @param options - Configuration options for default behavior.
    */
   constructor(options: ShellOptions = {}) {
-    this.defaultMode = options.defaultMode ?? 'capture';
+    this.defaultOutputMode = options.defaultOutputMode ?? 'capture';
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
     this.throwOnError = options.throwOnError ?? true; // default true
@@ -94,7 +94,7 @@ export class Shell {
       throw new Error('No command provided.');
     }
 
-    const mode = options?.outputMode ?? this.defaultMode;
+    const outputMode = options?.outputMode ?? this.defaultOutputMode;
 
     const stdioMap: Record<OutputMode, { stdout: string | string[]; stderr: string | string[] }> = {
       capture: { stdout: 'pipe', stderr: 'pipe' },
@@ -112,7 +112,7 @@ export class Shell {
 
     try {
       const result = await execa(program, cmdArgs, {
-        ...stdioMap[mode],
+        ...stdioMap[outputMode],
         reject: options?.throwOnError ?? this.throwOnError,
         ...options,
       });

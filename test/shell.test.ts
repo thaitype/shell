@@ -43,14 +43,14 @@ describe('Shell', () => {
     });
 
     it('should use specified default mode', async () => {
-      const shell = new Shell({ defaultMode: 'capture' });
+      const shell = new Shell({ defaultOutputMode: 'capture' });
       const result = await shell.run('echo "Test"');
 
       expect(result.stdout).toBe('Test');
     });
 
     it('should override default mode with per-command option', async () => {
-      const shell = new Shell({ defaultMode: 'live' });
+      const shell = new Shell({ defaultOutputMode: 'live' });
       const result = await shell.run('echo "Override"', { outputMode: 'capture' });
 
       // Override to capture, so stdout should be captured
@@ -333,7 +333,7 @@ describe('Shell', () => {
     it('should accept all valid options', () => {
       const mockLogger = vi.fn();
       const shell = new Shell({
-        defaultMode: 'capture',
+        defaultOutputMode: 'capture',
         dryRun: false,
         verbose: true,
         throwOnError: true,
@@ -375,15 +375,15 @@ describe('Shell', () => {
       ).rejects.toThrow();
     });
 
-    it('should use constructor defaultMode by default', async () => {
-      const shell = new Shell({ defaultMode: 'capture' });
+    it('should use constructor defaultOutputMode by default', async () => {
+      const shell = new Shell({ defaultOutputMode: 'capture' });
       const result = await shell.run('echo test');
 
       expect(result.stdout).toBe('test');
     });
 
-    it('should override constructor defaultMode with run option', async () => {
-      const shell = new Shell({ defaultMode: 'live' });
+    it('should override constructor defaultOutputMode with run option', async () => {
+      const shell = new Shell({ defaultOutputMode: 'live' });
       const result = await shell.run('echo test', { outputMode: 'capture' });
 
       expect(result.stdout).toBe('test');
