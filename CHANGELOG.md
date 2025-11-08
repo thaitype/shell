@@ -1,5 +1,11 @@
 # @thaitype/shell
 
+## 2.0.0
+
+### Major Changes
+
+- ed49ae2: Refactor Shell Option, More Type Safety, Meaningful Option, Support Run with Standard Schema which provide type-safety command line
+
 ## 1.1.0
 
 ### Minor Changes
