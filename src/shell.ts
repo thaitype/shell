@@ -24,8 +24,10 @@
  * await shell.run('rm -rf node_modules'); // Logs but doesn't execute
  * ```
  */
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { execa, type Options as ExecaOptions, ExecaError } from 'execa';
 import parseArgsStringToArgv from 'string-argv';
+import { standardValidate } from './standard-schema.js';
 
 /**
  * Output mode behavior for handling stdout/stderr.
@@ -334,7 +336,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * }
    * ```
    */
-  public run<Mode extends OutputMode = DefaultMode>(
+  public async run<Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode>
   ): Promise<RunResult<true, Mode>> {
@@ -367,10 +369,19 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * }
    * ```
    */
-  public safeRun<Mode extends OutputMode = DefaultMode>(
+  public async safeRun<Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode>
   ): Promise<RunResult<false, Mode>> {
     return this.execute<false, Mode>(cmd, { ...options, throwOnError: false });
+  }
+
+  public async runParse<T extends StandardSchemaV1, Mode extends OutputMode = DefaultMode>(
+    cmd: string | string[],
+    schema: T,
+    options?: RunOptions<Mode>
+  ): Promise<StandardSchemaV1.InferOutput<T>> {
+    const result = await this.run<Mode>(cmd, options);
+    return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
   }
 }
