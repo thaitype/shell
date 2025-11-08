@@ -27,7 +27,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { execa, type Options as ExecaOptions, ExecaError } from 'execa';
 import parseArgsStringToArgv from 'string-argv';
-import { standardValidate } from './standard-schema.js';
+import { standardSafeValidate, standardValidate, type StandardResult } from './standard-schema.js';
 
 /**
  * Output mode behavior for handling stdout/stderr.
@@ -383,5 +383,34 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   ): Promise<StandardSchemaV1.InferOutput<T>> {
     const result = await this.run<Mode>(cmd, options);
     return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
+  }
+
+  public async safeRunParse<T extends StandardSchemaV1, Mode extends OutputMode = DefaultMode>(
+    cmd: string | string[],
+    schema: T,
+    options?: RunOptions<Mode>
+  ): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>> {
+    const result = await this.safeRun<Mode>(cmd, options);
+    const fullCommand = Array.isArray(cmd) ? cmd.join(' ') : cmd;
+    if (!result.stdout) {
+      return {
+        success: false,
+        error: [{ message: `The command produced no output to validate: ${fullCommand}` }]
+      }
+    }
+    if (!result.success) {
+      return {
+        success: false,
+        error: [{ message: `The command failed with exit code ${result.exitCode}: ${fullCommand}` }]
+      }
+    }
+    try {
+      return standardSafeValidate(schema, JSON.parse(result.stdout));
+    } catch (e: unknown) {
+      return {
+        success: false,
+        error: [{ message: 'Unable to Parse JSON: ' + (e instanceof Error ? e.message : String(e)) }]
+      }
+    }
   }
 }
