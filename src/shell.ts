@@ -13,7 +13,7 @@
  * ```typescript
  * const shell = new Shell();
  * const result = await shell.safeRun('might-fail');
- * if (!result.isSuccess) {
+ * if (!result.success) {
  *   console.error('Command failed:', result.exitCode);
  * }
  * ```
@@ -137,7 +137,7 @@ export interface SafeResult<Capture extends boolean> extends StrictResult<Captur
   /** Exit code returned by the executed process (undefined if command failed to start) */
   exitCode: number | undefined;
   /** True if the command exited with code 0 */
-  isSuccess: boolean;
+  success: boolean;
 }
 
 /**
@@ -239,11 +239,11 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * ```typescript
    * // Throws on error
    * const result = await shell.execute('echo test', { throwOnError: true });
-   * console.log(result.stdout); // No need to check isSuccess
+   * console.log(result.stdout); // No need to check success
    *
    * // Returns error result
    * const result = await shell.execute('might-fail', { throwOnError: false });
-   * if (result.isSuccess) {
+   * if (result.success) {
    *   console.log(result.stdout);
    * }
    * ```
@@ -271,7 +271,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     }
 
     if (this.dryRun) {
-      return { stdout: '', stderr: '', exitCode: 0, isSuccess: true } as RunResult<Throw, Mode>;
+      return { stdout: '', stderr: '', exitCode: 0, success: true } as RunResult<Throw, Mode>;
     }
 
     try {
@@ -285,7 +285,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stdout: result.stdout ? String(result.stdout) : null,
         stderr: result.stderr ? String(result.stderr) : null,
         exitCode: result.exitCode,
-        isSuccess: result.exitCode === 0,
+        success: result.exitCode === 0,
       } as RunResult<Throw, Mode>;
     } catch (error: unknown) {
       if (error instanceof ExecaError) {
@@ -303,7 +303,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stdout: null,
         stderr: null,
         exitCode: undefined,
-        isSuccess: false,
+        success: false,
       } as RunResult<Throw, Mode>;
     }
   }
@@ -345,21 +345,21 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * Execute a command that never throws, returning an error result instead.
    *
    * Use this when you want to handle errors programmatically without try/catch.
-   * Returns a result with exitCode, and isSuccess flags.
+   * Returns a result with exitCode, and success flags.
    *
    * @template Mode - The output mode for this command (defaults to instance default)
    *
    * @param cmd - Command to execute, as string or array of arguments
    * @param options - Optional overrides for this execution
    *
-   * @returns Result with stdout, stderr, exitCode, and isSuccess
+   * @returns Result with stdout, stderr, exitCode, and success
    *
    * @example
    * ```typescript
    * const shell = new Shell();
    * const result = await shell.safeRun('lint-code');
    *
-   * if (!result.isSuccess) {
+   * if (!result.success) {
    *   console.warn('Linting failed with exit code:', result.exitCode);
    *   console.warn('Errors:', result.stderr);
    * } else {
