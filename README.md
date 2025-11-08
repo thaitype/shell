@@ -23,6 +23,7 @@ Running shell commands in Node.js often involves repetitive boilerplate and deal
 - **Dry-run mode**: Test your scripts without executing actual commands
 - **Verbose logging**: Automatically log all executed commands
 - **Flexible error handling**: Choose to throw on errors or handle them gracefully
+- **Schema validation**: Parse and validate JSON output with Standard Schema (Zod, Valibot, etc.)
 - **Custom logger support**: Integrate with your preferred logging solution
 - **Type-safe**: Written in TypeScript with full type definitions
 - **ESM-first**: Modern ES modules support
@@ -153,6 +154,50 @@ if (!result.success) {
 }
 ```
 
+### 5. Schema Validation with JSON Output
+
+Parse and validate JSON output from commands using Standard Schema:
+
+```typescript
+import { Shell } from '@thaitype/shell';
+import { z } from 'zod';
+
+const shell = new Shell();
+
+// Define a schema for package.json
+const packageSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  dependencies: z.record(z.string()).optional(),
+});
+
+// Parse and validate - throws if invalid
+const pkg = await shell.runParse('cat package.json', packageSchema);
+console.log(`Package: ${pkg.name}@${pkg.version}`);
+
+// Safe parse - returns result object
+const apiSchema = z.object({
+  status: z.string(),
+  data: z.array(z.object({
+    id: z.number(),
+    name: z.string(),
+  })),
+});
+
+const result = await shell.safeRunParse(
+  'curl -s https://api.example.com/users',
+  apiSchema
+);
+
+if (result.success) {
+  result.data.data.forEach(user => {
+    console.log(`User: ${user.name} (${user.id})`);
+  });
+} else {
+  console.error('API validation failed:', result.error);
+}
+```
+
 ## API
 
 ### `new Shell(options?)`
@@ -255,6 +300,95 @@ interface RunOptions extends ExecaOptions {
 ```
 
 Inherits all options from [execa's Options](https://github.com/sindresorhus/execa#options).
+
+### `shell.runParse(command, schema, options?)`
+
+Execute a command, parse its stdout as JSON, and validate it against a [Standard Schema](https://github.com/standard-schema/standard-schema).
+
+**Throws on error** - Command failure or validation failure will throw an exception.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `schema: StandardSchemaV1` - A Standard Schema to validate the JSON output.
+- `options?: RunOptions` - Optional execution options.
+
+#### Returns
+
+- Type-safe parsed and validated output based on the schema.
+
+#### Throws
+
+- Error when command fails
+- Error when output is not valid JSON
+- Error when output doesn't match the schema
+
+**Example with Zod:**
+
+```typescript
+import { Shell } from '@thaitype/shell';
+import { z } from 'zod';
+
+const shell = new Shell();
+
+const packageSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+});
+
+// Execute command and validate JSON output
+const pkg = await shell.runParse(
+  'cat package.json',
+  packageSchema
+);
+
+console.log(pkg.name, pkg.version); // Type-safe!
+```
+
+### `shell.safeRunParse(command, schema, options?)`
+
+Execute a command, parse its stdout as JSON, and validate it against a Standard Schema.
+
+**Never throws** - Returns a result object with success/error information.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `schema: StandardSchemaV1` - A Standard Schema to validate the JSON output.
+- `options?: RunOptions` - Optional execution options.
+
+#### Returns
+
+```typescript
+type StandardResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: Array<{ message: string }> };
+```
+
+**Example with Zod:**
+
+```typescript
+import { Shell } from '@thaitype/shell';
+import { z } from 'zod';
+
+const shell = new Shell();
+
+const userSchema = z.object({
+  username: z.string(),
+  id: z.number(),
+});
+
+const result = await shell.safeRunParse(
+  'curl -s https://api.example.com/user',
+  userSchema
+);
+
+if (result.success) {
+  console.log('User:', result.data.username);
+} else {
+  console.error('Validation failed:', result.error);
+}
+```
 
 ### Output Modes
 
