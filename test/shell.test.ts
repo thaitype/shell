@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Shell } from '../src/shell.js';
+import { Shell, createShell } from '../src/shell.js';
+import { z } from 'zod';
 
 describe('Shell', () => {
   describe('Command Parsing', () => {
@@ -478,6 +479,261 @@ describe('Shell', () => {
       await expect(
         shell.run('this-command-definitely-does-not-exist-12345')
       ).rejects.toThrow();
+    });
+
+    it('should handle execaOptions reject override in safeRun', async () => {
+      const shell = new Shell();
+
+      // Edge case: safeRun with reject: true in execaOptions
+      // This causes execa to throw even though throwOnError is false
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await shell.safeRun('sh -c "exit 1"', { reject: true } as any);
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBeUndefined();
+      expect(result.stdout).toBe(null);
+      expect(result.stderr).toBe(null);
+    });
+
+    it('should handle non-ExecaError in execute', async () => {
+      const shell = new Shell();
+
+      // This will trigger a non-ExecaError (command not found)
+      await expect(
+        shell.execute('this-command-definitely-does-not-exist-12345', { throwOnError: true })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Factory Function', () => {
+    it('should create Shell instance using createShell factory', async () => {
+      const shell = createShell({ verbose: true });
+      expect(shell).toBeInstanceOf(Shell);
+
+      const result = await shell.run('echo factory');
+      expect(result.stdout).toBe('factory');
+    });
+
+    it('should create Shell with typed output mode', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const result = await shell.run('echo test');
+      expect(result.stdout).toBe('test');
+    });
+  });
+
+  describe('Schema Validation - runParse', () => {
+    it('should parse and validate JSON output', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        version: z.string(),
+      });
+
+      const result = await shell.runParse(
+        'echo \'{"name":"test-package","version":"1.0.0"}\'',
+        schema
+      );
+
+      expect(result.name).toBe('test-package');
+      expect(result.version).toBe('1.0.0');
+    });
+
+    it('should handle async schema validation', async () => {
+      const shell = createShell();
+
+      // Create a custom async standard schema
+      const asyncSchema = {
+        '~standard': {
+          version: 1,
+          vendor: 'custom',
+          validate: async (input: unknown) => {
+            // Simulate async validation
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            if (typeof input === 'object' && input !== null && 'value' in input) {
+              return { value: input };
+            }
+            return {
+              issues: [{ message: 'Invalid data' }]
+            };
+          }
+        }
+      };
+
+      const result = await shell.runParse(
+        'echo \'{"value":"async-test"}\'',
+        asyncSchema as any
+      );
+
+      expect(result).toHaveProperty('value');
+    });
+
+    it('should parse with verbose mode', async () => {
+      const mockDebug = vi.fn();
+      const shell = createShell({
+        verbose: true,
+        logger: { debug: mockDebug }
+      });
+
+      const schema = z.object({ value: z.string() });
+
+      await shell.runParse('echo \'{"value":"test"}\'', schema);
+
+      // Should log validation output
+      expect(mockDebug).toHaveBeenCalledWith(
+        expect.stringContaining('Validation Output:'),
+        expect.any(Object)
+      );
+    });
+
+    it('should throw when JSON is invalid', async () => {
+      const shell = createShell();
+      const schema = z.object({ name: z.string() });
+
+      await expect(
+        shell.runParse('echo "not json"', schema)
+      ).rejects.toThrow();
+    });
+
+    it('should throw when validation fails', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        count: z.number(),
+      });
+
+      await expect(
+        shell.runParse('echo \'{"name":"test","count":"not-a-number"}\'', schema)
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Schema Validation - safeRunParse', () => {
+    it('should parse and validate JSON output successfully', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        version: z.string(),
+      });
+
+      const result = await shell.safeRunParse(
+        'echo \'{"name":"test-pkg","version":"2.0.0"}\'',
+        schema
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.name).toBe('test-pkg');
+        expect(result.data.version).toBe('2.0.0');
+      }
+    });
+
+    it('should return error when command produces no output', async () => {
+      const shell = createShell();
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('true', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('produced no output');
+      }
+    });
+
+    it('should return error when command fails', async () => {
+      const shell = createShell();
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('sh -c "echo output && exit 1"', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('failed with exit code');
+      }
+    });
+
+    it('should return error when JSON is invalid', async () => {
+      const shell = createShell();
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('echo "not valid json{{"', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('Unable to Parse JSON');
+      }
+    });
+
+    it('should return error when validation fails', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        count: z.number(),
+      });
+
+      const result = await shell.safeRunParse(
+        'echo \'{"name":"test","count":"not-a-number"}\'',
+        schema
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('should include verbose info in error messages', async () => {
+      const shell = createShell({ verbose: true });
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('true', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('Command:');
+      }
+    });
+
+    it('should handle array commands in verbose mode', async () => {
+      const shell = createShell({ verbose: true });
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse(['echo', '{"value":"test"}'], schema);
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should handle async schema validation with safeRunParse', async () => {
+      const shell = createShell();
+
+      // Create a custom async standard schema
+      const asyncSchema = {
+        '~standard': {
+          version: 1,
+          vendor: 'custom',
+          validate: async (input: unknown) => {
+            // Simulate async validation
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            if (typeof input === 'object' && input !== null && 'value' in input) {
+              return { value: input };
+            }
+            return {
+              issues: [{ message: 'Invalid async data' }]
+            };
+          }
+        }
+      };
+
+      const result = await shell.safeRunParse(
+        'echo \'{"value":"async-safe-test"}\'',
+        asyncSchema as any
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toHaveProperty('value');
+      }
     });
   });
 });
