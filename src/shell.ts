@@ -395,6 +395,8 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     options?: RunOptions<Mode>
   ): Promise<StandardSchemaV1.InferOutput<T>> {
     const result = await this.run<Mode>(cmd, options);
+    const verboseOutput = this.verbose ? `\nStdout: ${result.stdout}\nStderr: ${result.stderr}` : '';
+    if (this.verbose) this.logger?.('Validation Output:' + verboseOutput);
     return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
   }
 
@@ -405,16 +407,19 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   ): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>> {
     const result = await this.safeRun<Mode>(cmd, options);
     const fullCommand = Array.isArray(cmd) ? cmd.join(' ') : cmd;
+    const verboseOutput = this.verbose ? `\nStdout: ${result.stdout}\nStderr: ${result.stderr}` : '';
+    const verboseCommand = this.verbose ? `\nCommand: ${fullCommand}` : '';
+    const verboseInfo = verboseCommand + verboseOutput;
     if (!result.stdout) {
       return {
         success: false,
-        error: [{ message: `The command produced no output to validate: ${fullCommand}` }]
+        error: [{ message: `The command produced no output to validate. ${verboseInfo}` }]
       }
     }
     if (!result.success) {
       return {
         success: false,
-        error: [{ message: `The command failed with exit code ${result.exitCode}: ${fullCommand}` }]
+        error: [{ message: `The command failed with exit code ${result.exitCode}. ${verboseInfo}` }]
       }
     }
     try {
@@ -422,7 +427,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     } catch (e: unknown) {
       return {
         success: false,
-        error: [{ message: 'Unable to Parse JSON: ' + (e instanceof Error ? e.message : String(e)) }]
+        error: [{ message: 'Unable to Parse JSON: ' + (e instanceof Error ? e.message : String(e)) + verboseInfo }]
       }
     }
   }
