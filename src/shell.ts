@@ -1,29 +1,3 @@
-/**
- * A type-safe utility class for running shell commands with flexible output modes and configuration options.
- * Supports dry-run, verbose logging, output streaming, and error handling control.
- *
- * @example Basic usage
- * ```typescript
- * const shell = new Shell({ verbose: true });
- * const result = await shell.run('echo "Hello World"');
- * console.log(result.stdout); // "Hello World"
- * ```
- *
- * @example Safe execution (no throw)
- * ```typescript
- * const shell = new Shell();
- * const result = await shell.safeRun('might-fail');
- * if (!result.success) {
- *   console.error('Command failed:', result.exitCode);
- * }
- * ```
- *
- * @example Dry-run mode
- * ```typescript
- * const shell = new Shell({ dryRun: true, verbose: true });
- * await shell.run('rm -rf node_modules'); // Logs but doesn't execute
- * ```
- */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { execa, type Options as ExecaOptions, ExecaError } from 'execa';
 import parseArgsStringToArgv from 'string-argv';
