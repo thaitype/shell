@@ -7,8 +7,6 @@ describe('Shell', () => {
       const shell = new Shell();
       const result = await shell.run('echo "Hello World"');
 
-      expect(result.isSuccess).toBe(true);
-      expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('Hello World');
     });
 
@@ -16,7 +14,6 @@ describe('Shell', () => {
       const shell = new Shell();
       const result = await shell.run(['echo', 'Hello', 'World']);
 
-      expect(result.isSuccess).toBe(true);
       expect(result.stdout).toBe('Hello World');
     });
 
@@ -63,16 +60,14 @@ describe('Shell', () => {
 
       // In 'all' mode, output is both captured and streamed
       expect(result.stdout).toBe('All Mode');
-      expect(result.isSuccess).toBe(true);
     });
 
     it('should handle live mode', async () => {
       const shell = new Shell();
       const result = await shell.run('echo "Live"', { outputMode: 'live' });
 
-      // In live mode, command still succeeds
-      expect(result.exitCode).toBe(0);
-      expect(result.isSuccess).toBe(true);
+      // In live mode, output is not captured
+      expect(result.stdout).toBe(null);
     });
   });
 
@@ -80,9 +75,9 @@ describe('Shell', () => {
     it('should not execute commands in dry run mode', async () => {
       const shell = new Shell({ dryRun: true });
       // This command would fail if executed, but should succeed in dry run
-      const result = await shell.run('sh -c "exit 1"');
+      const result = await shell.safeRun('sh -c "exit 1"');
 
-      expect(result.isSuccess).toBe(true);
+      expect(result.success).toBe(true);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('');
       expect(result.stderr).toBe('');
@@ -90,14 +85,13 @@ describe('Shell', () => {
 
     it('should return mock success result in dry run mode', async () => {
       const shell = new Shell({ dryRun: true });
-      const result = await shell.run('echo "test"');
+      const result = await shell.safeRun('echo "test"');
 
       expect(result).toEqual({
         stdout: '',
         stderr: '',
         exitCode: 0,
-        isError: false,
-        isSuccess: true
+        success: true
       });
     });
 
@@ -116,7 +110,7 @@ describe('Shell', () => {
 
       await shell.run('echo test');
 
-      // dryRun alone logs, but let's check it does log
+      // dryRun alone logs, so it should still log
       expect(mockLogger).toHaveBeenCalledWith('$ echo test');
     });
   });
@@ -150,8 +144,8 @@ describe('Shell', () => {
     });
   });
 
-  describe('Error Handling - throwOnError', () => {
-    it('should throw error by default when command fails', async () => {
+  describe('Error Handling - run() vs safeRun()', () => {
+    it('should throw error by default when command fails with run()', async () => {
       const shell = new Shell();
 
       await expect(shell.run('sh -c "exit 1"')).rejects.toThrow();
@@ -185,34 +179,32 @@ describe('Shell', () => {
       }
     });
 
-    it('should not throw when throwOnError is false at constructor level', async () => {
-      const shell = new Shell({ throwOnError: false });
-      const result = await shell.run('sh -c "exit 1"');
+    it('should not throw when using safeRun()', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('sh -c "exit 1"');
 
-      expect(result.isError).toBe(true);
-      expect(result.isSuccess).toBe(false);
+      expect(result.success).toBe(false);
       expect(result.exitCode).toBe(1);
     });
 
-    it('should respect per-command throwOnError option', async () => {
-      const shell = new Shell({ throwOnError: true });
-      // Override to not throw for this specific command
-      const result = await shell.run('sh -c "exit 1"', { throwOnError: false });
+    it('should respect execute with throwOnError false', async () => {
+      const shell = new Shell();
+      // Use execute() with explicit throwOnError: false
+      const result = await shell.execute('sh -c "exit 1"', { throwOnError: false });
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
       expect(result.exitCode).toBe(1);
     });
 
-    it('should return error result when throwOnError is false', async () => {
-      const shell = new Shell({ throwOnError: false });
-      const result = await shell.run('sh -c "exit 42"');
+    it('should return error result when using safeRun() with different exit codes', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('sh -c "exit 42"');
 
       expect(result).toEqual({
         stdout: null,
         stderr: null,
         exitCode: 42,
-        isError: true,
-        isSuccess: false
+        success: false
       });
     });
   });
@@ -277,28 +269,25 @@ describe('Shell', () => {
   });
 
   describe('Result Structure', () => {
-    it('should return correct structure for successful command', async () => {
+    it('should return correct structure for successful command with safeRun', async () => {
       const shell = new Shell();
-      const result = await shell.run('echo success');
+      const result = await shell.safeRun('echo success');
 
       expect(result).toHaveProperty('stdout');
       expect(result).toHaveProperty('stderr');
       expect(result).toHaveProperty('exitCode');
-      expect(result).toHaveProperty('isSuccess');
-      expect(result).toHaveProperty('isError');
+      expect(result).toHaveProperty('success');
 
-      expect(result.isSuccess).toBe(true);
-      expect(result.isError).toBe(false);
+      expect(result.success).toBe(true);
       expect(result.exitCode).toBe(0);
     });
 
-    it('should set isSuccess and isError correctly', async () => {
+    it('should set success correctly', async () => {
       const shell = new Shell();
-      const result = await shell.run('echo test');
+      const result = await shell.safeRun('echo test');
 
       expect(result.exitCode).toBe(0);
-      expect(result.isSuccess).toBe(true);
-      expect(result.isError).toBe(false);
+      expect(result.success).toBe(true);
     });
 
     it('should return null for empty stderr', async () => {
@@ -310,7 +299,7 @@ describe('Shell', () => {
 
     it('should capture both stdout and stderr', async () => {
       const shell = new Shell();
-      const result = await shell.run('sh -c "echo stdout; echo stderr >&2; exit 0"');
+      const result = await shell.safeRun('sh -c "echo stdout; echo stderr >&2; exit 0"');
 
       expect(result.stdout).toBe('stdout');
       expect(result.stderr).toBe('stderr');
@@ -336,7 +325,6 @@ describe('Shell', () => {
         defaultOutputMode: 'capture',
         dryRun: false,
         verbose: true,
-        throwOnError: true,
         throwMode: 'simple',
         logger: mockLogger
       });
@@ -348,30 +336,30 @@ describe('Shell', () => {
       const shell = new Shell({ verbose: true });
       const result = await shell.run('echo test');
 
-      expect(result.isSuccess).toBe(true);
+      expect(result.stdout).toBe('test');
     });
 
     it('should handle empty options object', async () => {
       const shell = new Shell({});
       const result = await shell.run('echo test');
 
-      expect(result.isSuccess).toBe(true);
+      expect(result.stdout).toBe('test');
     });
   });
 
   describe('Option Inheritance and Override', () => {
-    it('should use constructor throwOnError by default', async () => {
-      const shell = new Shell({ throwOnError: false });
-      const result = await shell.run('sh -c "exit 1"');
+    it('should use safeRun to not throw', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('sh -c "exit 1"');
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
     });
 
-    it('should override constructor throwOnError with run option', async () => {
-      const shell = new Shell({ throwOnError: false });
+    it('should use execute with throwOnError to control behavior', async () => {
+      const shell = new Shell();
 
       await expect(
-        shell.run('sh -c "exit 1"', { throwOnError: true })
+        shell.execute('sh -c "exit 1"', { throwOnError: true })
       ).rejects.toThrow();
     });
 
@@ -387,6 +375,26 @@ describe('Shell', () => {
       const result = await shell.run('echo test', { outputMode: 'capture' });
 
       expect(result.stdout).toBe('test');
+    });
+  });
+
+  describe('Edge Cases - ExecaError Handling', () => {
+    it('should return error result when command not found with safeRun', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('this-command-definitely-does-not-exist-12345');
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBeUndefined();
+      expect(result.stdout).toBe(null);
+      expect(result.stderr).toBe(null);
+    });
+
+    it('should throw when command not found with run', async () => {
+      const shell = new Shell();
+
+      await expect(
+        shell.run('this-command-definitely-does-not-exist-12345')
+      ).rejects.toThrow();
     });
   });
 });
