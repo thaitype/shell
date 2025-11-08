@@ -12,15 +12,14 @@ import parseArgsStringToArgv from 'string-argv';
 
 /** Output mode behavior for handling stdout/stderr */
 export type OutputMode = 'capture' | 'live' | 'all';
-type DefaultOutputMode = 'capture';
 
 type CaptureForMode<M extends OutputMode> =
   M extends 'live' ? false : true;
 
 /** Configuration options for Shell instance */
-export interface ShellOptions<ThrowOnError extends boolean = true> {
+export interface ShellOptions<ThrowOnError extends boolean = true, Mode extends OutputMode = 'capture'> {
   /** Default output mode applied to all runs unless overridden */
-  defaultOutputMode?: OutputMode;
+  defaultOutputMode?: Mode;
   /** If true, print commands but skip actual execution */
   dryRun?: boolean;
   /** If true, log every executed command */
@@ -69,7 +68,17 @@ export type RunResult<Throw extends boolean, Mode extends OutputMode> =
   ? StrictResult<CaptureForMode<Mode>>
   : SafeResult<CaptureForMode<Mode>>;
 
-export class Shell<DefaultThrow extends boolean = true, DefaultMode extends OutputMode = DefaultOutputMode> {
+/**
+ * Factory function to create a new Shell instance for type safety and convenience.
+ */
+export function createShell<
+  DefaultThrow extends boolean = true,
+  DefaultMode extends OutputMode = OutputMode
+>(options: ShellOptions<DefaultThrow, DefaultMode> = {}) {
+  return new Shell<DefaultThrow, DefaultMode>(options);
+}
+
+export class Shell<DefaultThrow extends boolean = true, DefaultMode extends OutputMode = 'capture'> {
   private defaultOutputMode: OutputMode;
   private dryRun: boolean;
   private verbose: boolean;
@@ -77,11 +86,13 @@ export class Shell<DefaultThrow extends boolean = true, DefaultMode extends Outp
   private throwMode: 'simple' | 'raw';
   private logger?: (message: string) => void;
 
+  public static create = createShell;
+
   /**
    * Create a new Shell instance.
    * @param options - Configuration options for default behavior.
    */
-  constructor(options: ShellOptions<DefaultThrow> = {}) {
+  constructor(options: ShellOptions<DefaultThrow, DefaultMode> = {}) {
     this.defaultOutputMode = options.defaultOutputMode ?? 'capture';
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
