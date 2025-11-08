@@ -12,6 +12,10 @@ import parseArgsStringToArgv from 'string-argv';
 
 /** Output mode behavior for handling stdout/stderr */
 export type OutputMode = 'capture' | 'live' | 'all';
+type DefaultOutputMode = 'capture';
+
+type CaptureForMode<M extends OutputMode> =
+  M extends 'live' ? false : true;
 
 /** Configuration options for Shell instance */
 export interface ShellOptions<ThrowOnError extends boolean = true> {
@@ -36,22 +40,22 @@ export interface ShellOptions<ThrowOnError extends boolean = true> {
 }
 
 /** Options for an individual command execution */
-export interface RunOptions<ThrowOnError extends boolean = true> extends ExecaOptions {
+export interface RunOptions<ThrowOnError extends boolean = true, Mode extends OutputMode = OutputMode> extends ExecaOptions {
   /** Override the output behavior for this specific command */
-  outputMode?: OutputMode;
+  outputMode?: Mode;
   /** Whether to throw error on non-zero exit */
   throwOnError?: ThrowOnError;
 }
 
 /** The structured result returned by Shell.run() */
-export interface StrictResult {
+export interface StrictResult<Capture extends boolean> {
   /** Captured stdout output, or null if not captured */
-  stdout: string | null;
+  stdout: Capture extends true ? string : null;
   /** Captured stderr output, or null if not captured */
-  stderr: string | null;
+  stderr: Capture extends true ? string : null;
 }
 
-export interface SafeResult extends StrictResult {
+export interface SafeResult<Capture extends boolean> extends StrictResult<Capture> {
   /** Exit code returned by the executed process */
   exitCode: number | undefined;
   /** Indicates whether the command exited with an error */
@@ -60,9 +64,12 @@ export interface SafeResult extends StrictResult {
   isSuccess: boolean;
 }
 
-export type RunResult<Throw extends boolean> = Throw extends true ? StrictResult : SafeResult;
+export type RunResult<Throw extends boolean, Mode extends OutputMode> =
+  Throw extends true
+  ? StrictResult<CaptureForMode<Mode>>
+  : SafeResult<CaptureForMode<Mode>>;
 
-export class Shell<DefaultThrow extends boolean = true> {
+export class Shell<DefaultThrow extends boolean = true, DefaultMode extends OutputMode = DefaultOutputMode> {
   private defaultOutputMode: OutputMode;
   private dryRun: boolean;
   private verbose: boolean;
@@ -91,7 +98,10 @@ export class Shell<DefaultThrow extends boolean = true> {
    * @param options - Optional overrides for this execution.
    * @returns A structured {@link RunResult} containing outputs and exit info.
    */
-  async run<Throw extends boolean = DefaultThrow>(cmd: string | string[], options?: RunOptions<Throw>): Promise<RunResult<Throw>> {
+  async run<
+    Throw extends boolean = DefaultThrow,
+    Mode extends OutputMode = DefaultMode
+  >(cmd: string | string[], options?: RunOptions<Throw, Mode>): Promise<RunResult<Throw, Mode>> {
     const args = Array.isArray(cmd) ? cmd : parseArgsStringToArgv(cmd);
 
     const [program, ...cmdArgs] = args;
@@ -112,7 +122,7 @@ export class Shell<DefaultThrow extends boolean = true> {
     }
 
     if (this.dryRun) {
-      return { stdout: '', stderr: '', exitCode: 0, isError: false, isSuccess: true } as RunResult<Throw>;
+      return { stdout: '', stderr: '', exitCode: 0, isError: false, isSuccess: true } as RunResult<Throw, Mode>;
     }
 
     try {
@@ -128,7 +138,7 @@ export class Shell<DefaultThrow extends boolean = true> {
         exitCode: result.exitCode,
         isError: result.exitCode !== 0,
         isSuccess: result.exitCode === 0,
-      } as RunResult<Throw>;
+      } as RunResult<Throw, Mode>;
     } catch (error: unknown) {
       if (error instanceof ExecaError) {
         if (this.throwOnError || options?.throwOnError) {
@@ -147,7 +157,7 @@ export class Shell<DefaultThrow extends boolean = true> {
         exitCode: undefined,
         isError: true,
         isSuccess: false,
-      } as RunResult<Throw>;
+      } as RunResult<Throw, Mode>;
     }
   }
 }
