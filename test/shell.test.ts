@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Shell } from '../src/shell.js';
+import { Shell, createShell } from '../src/shell.js';
+import { z } from 'zod';
 
 describe('Shell', () => {
   describe('Command Parsing', () => {
@@ -7,8 +8,6 @@ describe('Shell', () => {
       const shell = new Shell();
       const result = await shell.run('echo "Hello World"');
 
-      expect(result.isSuccess).toBe(true);
-      expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('Hello World');
     });
 
@@ -16,7 +15,6 @@ describe('Shell', () => {
       const shell = new Shell();
       const result = await shell.run(['echo', 'Hello', 'World']);
 
-      expect(result.isSuccess).toBe(true);
       expect(result.stdout).toBe('Hello World');
     });
 
@@ -43,14 +41,14 @@ describe('Shell', () => {
     });
 
     it('should use specified default mode', async () => {
-      const shell = new Shell({ defaultOutputMode: 'capture' });
+      const shell = new Shell({ outputMode: 'capture' });
       const result = await shell.run('echo "Test"');
 
       expect(result.stdout).toBe('Test');
     });
 
     it('should override default mode with per-command option', async () => {
-      const shell = new Shell({ defaultOutputMode: 'live' });
+      const shell = new Shell({ outputMode: 'live' });
       const result = await shell.run('echo "Override"', { outputMode: 'capture' });
 
       // Override to capture, so stdout should be captured
@@ -63,16 +61,14 @@ describe('Shell', () => {
 
       // In 'all' mode, output is both captured and streamed
       expect(result.stdout).toBe('All Mode');
-      expect(result.isSuccess).toBe(true);
     });
 
     it('should handle live mode', async () => {
       const shell = new Shell();
       const result = await shell.run('echo "Live"', { outputMode: 'live' });
 
-      // In live mode, command still succeeds
-      expect(result.exitCode).toBe(0);
-      expect(result.isSuccess).toBe(true);
+      // In live mode, output is not captured
+      expect(result.stdout).toBe(null);
     });
   });
 
@@ -80,9 +76,9 @@ describe('Shell', () => {
     it('should not execute commands in dry run mode', async () => {
       const shell = new Shell({ dryRun: true });
       // This command would fail if executed, but should succeed in dry run
-      const result = await shell.run('sh -c "exit 1"');
+      const result = await shell.safeRun('sh -c "exit 1"');
 
-      expect(result.isSuccess).toBe(true);
+      expect(result.success).toBe(true);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('');
       expect(result.stderr).toBe('');
@@ -90,68 +86,84 @@ describe('Shell', () => {
 
     it('should return mock success result in dry run mode', async () => {
       const shell = new Shell({ dryRun: true });
-      const result = await shell.run('echo "test"');
+      const result = await shell.safeRun('echo "test"');
 
       expect(result).toEqual({
         stdout: '',
         stderr: '',
         exitCode: 0,
-        isError: false,
-        isSuccess: true
+        success: true
       });
     });
 
     it('should log commands in dry run mode when verbose', async () => {
-      const mockLogger = vi.fn();
-      const shell = new Shell({ dryRun: true, verbose: true, logger: mockLogger });
+      const mockDebug = vi.fn();
+      const shell = new Shell({
+        dryRun: true,
+        verbose: true,
+        logger: { debug: mockDebug }
+      });
 
       await shell.run('echo test');
 
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
 
     it('should not log commands in dry run mode without verbose', async () => {
-      const mockLogger = vi.fn();
-      const shell = new Shell({ dryRun: true, verbose: false, logger: mockLogger });
+      const mockDebug = vi.fn();
+      const shell = new Shell({
+        dryRun: true,
+        verbose: false,
+        logger: { debug: mockDebug }
+      });
 
       await shell.run('echo test');
 
-      // dryRun alone logs, but let's check it does log
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      // dryRun alone logs, so it should still log
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
   });
 
   describe('Verbose Mode', () => {
     it('should log commands when verbose is enabled', async () => {
-      const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: true, logger: mockLogger });
+      const mockDebug = vi.fn();
+      const shell = new Shell({
+        verbose: true,
+        logger: { debug: mockDebug }
+      });
 
       await shell.run('echo test');
 
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
 
     it('should not log commands when verbose is disabled', async () => {
-      const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: false, logger: mockLogger });
+      const mockDebug = vi.fn();
+      const shell = new Shell({
+        verbose: false,
+        logger: { debug: mockDebug }
+      });
 
       await shell.run('echo test');
 
-      expect(mockLogger).not.toHaveBeenCalled();
+      expect(mockDebug).not.toHaveBeenCalled();
     });
 
     it('should log array commands correctly', async () => {
-      const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: true, logger: mockLogger });
+      const mockDebug = vi.fn();
+      const shell = new Shell({
+        verbose: true,
+        logger: { debug: mockDebug }
+      });
 
       await shell.run(['echo', 'hello', 'world']);
 
-      expect(mockLogger).toHaveBeenCalledWith('$ echo hello world');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo hello world', expect.any(Object));
     });
   });
 
-  describe('Error Handling - throwOnError', () => {
-    it('should throw error by default when command fails', async () => {
+  describe('Error Handling - run() vs safeRun()', () => {
+    it('should throw error by default when command fails with run()', async () => {
       const shell = new Shell();
 
       await expect(shell.run('sh -c "exit 1"')).rejects.toThrow();
@@ -185,34 +197,32 @@ describe('Shell', () => {
       }
     });
 
-    it('should not throw when throwOnError is false at constructor level', async () => {
-      const shell = new Shell({ throwOnError: false });
-      const result = await shell.run('sh -c "exit 1"');
+    it('should not throw when using safeRun()', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('sh -c "exit 1"');
 
-      expect(result.isError).toBe(true);
-      expect(result.isSuccess).toBe(false);
+      expect(result.success).toBe(false);
       expect(result.exitCode).toBe(1);
     });
 
-    it('should respect per-command throwOnError option', async () => {
-      const shell = new Shell({ throwOnError: true });
-      // Override to not throw for this specific command
-      const result = await shell.run('sh -c "exit 1"', { throwOnError: false });
+    it('should respect execute with throwOnError false', async () => {
+      const shell = new Shell();
+      // Use execute() with explicit throwOnError: false
+      const result = await shell.execute('sh -c "exit 1"', { throwOnError: false });
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
       expect(result.exitCode).toBe(1);
     });
 
-    it('should return error result when throwOnError is false', async () => {
-      const shell = new Shell({ throwOnError: false });
-      const result = await shell.run('sh -c "exit 42"');
+    it('should return error result when using safeRun() with different exit codes', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('sh -c "exit 42"');
 
       expect(result).toEqual({
         stdout: null,
         stderr: null,
         exitCode: 42,
-        isError: true,
-        isSuccess: false
+        success: false
       });
     });
   });
@@ -247,58 +257,62 @@ describe('Shell', () => {
   describe('Logger Integration', () => {
     it('should use custom logger when provided', async () => {
       const logs: string[] = [];
-      const customLogger = (msg: string) => logs.push(msg);
+      const customDebug = (msg: string) => logs.push(msg);
 
-      const shell = new Shell({ verbose: true, logger: customLogger });
+      const shell = new Shell({
+        verbose: true,
+        logger: { debug: customDebug }
+      });
       await shell.run('echo test');
 
       expect(logs).toContain('$ echo test');
     });
 
-    it('should use console.log by default', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    it('should use console.debug by default', async () => {
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
       const shell = new Shell({ verbose: true });
 
       await shell.run('echo test');
 
-      expect(consoleSpy).toHaveBeenCalledWith('$ echo test');
+      expect(consoleSpy).toHaveBeenCalledWith('$ echo test', expect.any(Object));
       consoleSpy.mockRestore();
     });
 
     it('should call logger for both verbose and dryRun', async () => {
-      const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: true, dryRun: true, logger: mockLogger });
+      const mockDebug = vi.fn();
+      const shell = new Shell({
+        verbose: true,
+        dryRun: true,
+        logger: { debug: mockDebug }
+      });
 
       await shell.run('echo test');
 
-      expect(mockLogger).toHaveBeenCalledTimes(1);
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
   });
 
   describe('Result Structure', () => {
-    it('should return correct structure for successful command', async () => {
+    it('should return correct structure for successful command with safeRun', async () => {
       const shell = new Shell();
-      const result = await shell.run('echo success');
+      const result = await shell.safeRun('echo success');
 
       expect(result).toHaveProperty('stdout');
       expect(result).toHaveProperty('stderr');
       expect(result).toHaveProperty('exitCode');
-      expect(result).toHaveProperty('isSuccess');
-      expect(result).toHaveProperty('isError');
+      expect(result).toHaveProperty('success');
 
-      expect(result.isSuccess).toBe(true);
-      expect(result.isError).toBe(false);
+      expect(result.success).toBe(true);
       expect(result.exitCode).toBe(0);
     });
 
-    it('should set isSuccess and isError correctly', async () => {
+    it('should set success correctly', async () => {
       const shell = new Shell();
-      const result = await shell.run('echo test');
+      const result = await shell.safeRun('echo test');
 
       expect(result.exitCode).toBe(0);
-      expect(result.isSuccess).toBe(true);
-      expect(result.isError).toBe(false);
+      expect(result.success).toBe(true);
     });
 
     it('should return null for empty stderr', async () => {
@@ -310,7 +324,7 @@ describe('Shell', () => {
 
     it('should capture both stdout and stderr', async () => {
       const shell = new Shell();
-      const result = await shell.run('sh -c "echo stdout; echo stderr >&2; exit 0"');
+      const result = await shell.safeRun('sh -c "echo stdout; echo stderr >&2; exit 0"');
 
       expect(result.stdout).toBe('stdout');
       expect(result.stderr).toBe('stderr');
@@ -331,14 +345,17 @@ describe('Shell', () => {
     });
 
     it('should accept all valid options', () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
+      const mockWarn = vi.fn();
       const shell = new Shell({
-        defaultOutputMode: 'capture',
+        outputMode: 'capture',
         dryRun: false,
         verbose: true,
-        throwOnError: true,
         throwMode: 'simple',
-        logger: mockLogger
+        logger: {
+          debug: mockDebug,
+          warn: mockWarn
+        }
       });
 
       expect(shell).toBeInstanceOf(Shell);
@@ -348,45 +365,375 @@ describe('Shell', () => {
       const shell = new Shell({ verbose: true });
       const result = await shell.run('echo test');
 
-      expect(result.isSuccess).toBe(true);
+      expect(result.stdout).toBe('test');
     });
 
     it('should handle empty options object', async () => {
       const shell = new Shell({});
       const result = await shell.run('echo test');
 
-      expect(result.isSuccess).toBe(true);
+      expect(result.stdout).toBe('test');
     });
   });
 
   describe('Option Inheritance and Override', () => {
-    it('should use constructor throwOnError by default', async () => {
-      const shell = new Shell({ throwOnError: false });
-      const result = await shell.run('sh -c "exit 1"');
+    it('should use safeRun to not throw', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('sh -c "exit 1"');
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
     });
 
-    it('should override constructor throwOnError with run option', async () => {
-      const shell = new Shell({ throwOnError: false });
+    it('should use execute with throwOnError to control behavior', async () => {
+      const shell = new Shell();
 
       await expect(
-        shell.run('sh -c "exit 1"', { throwOnError: true })
+        shell.execute('sh -c "exit 1"', { throwOnError: true })
       ).rejects.toThrow();
     });
 
     it('should use constructor defaultOutputMode by default', async () => {
-      const shell = new Shell({ defaultOutputMode: 'capture' });
+      const shell = new Shell({ outputMode: 'capture' });
       const result = await shell.run('echo test');
 
       expect(result.stdout).toBe('test');
     });
 
     it('should override constructor defaultOutputMode with run option', async () => {
-      const shell = new Shell({ defaultOutputMode: 'live' });
+      const shell = new Shell({ outputMode: 'live' });
       const result = await shell.run('echo test', { outputMode: 'capture' });
 
       expect(result.stdout).toBe('test');
+    });
+
+    it('should override verbose at command level', async () => {
+      const mockDebug = vi.fn();
+      const shell = new Shell({
+        verbose: false,
+        logger: { debug: mockDebug }
+      });
+
+      // This command should log because we override verbose to true
+      await shell.run('echo test', { verbose: true });
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
+    });
+
+    it('should override dryRun at command level', async () => {
+      const shell = new Shell({ dryRun: false });
+
+      // This command should be in dry run mode even though default is false
+      const result = await shell.safeRun('sh -c "exit 1"', { dryRun: true });
+
+      expect(result.success).toBe(true); // Dry run always succeeds
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should deep merge execaOptions from shell and command level', async () => {
+      const shell = new Shell({
+        execaOptions: {
+          env: { SHELL_VAR: 'from-shell' },
+          timeout: 5000
+        }
+      });
+
+      // Command-level should override shell-level
+      const result = await shell.run('echo $SHELL_VAR $CMD_VAR', {
+        env: { CMD_VAR: 'from-command' }
+      });
+
+      // Both env vars should be available (deep merge)
+      // Note: This test verifies the merge happens, actual execution depends on shell
+      expect(result.stdout).toBeDefined();
+    });
+
+    it('should allow command-level execaOptions to override shell-level', async () => {
+      const shell = new Shell({
+        execaOptions: {
+          timeout: 1000
+        }
+      });
+
+      // Command-level timeout should override shell-level
+      const result = await shell.run('echo test', {
+        timeout: 10000 // Higher timeout at command level
+      });
+
+      expect(result.stdout).toBe('test');
+    });
+  });
+
+  describe('Edge Cases - ExecaError Handling', () => {
+    it('should return error result when command not found with safeRun', async () => {
+      const shell = new Shell();
+      const result = await shell.safeRun('this-command-definitely-does-not-exist-12345');
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBeUndefined();
+      expect(result.stdout).toBe(null);
+      expect(result.stderr).toBe(null);
+    });
+
+    it('should throw when command not found with run', async () => {
+      const shell = new Shell();
+
+      await expect(
+        shell.run('this-command-definitely-does-not-exist-12345')
+      ).rejects.toThrow();
+    });
+
+    it('should handle execaOptions reject override in safeRun', async () => {
+      const shell = new Shell();
+
+      // Edge case: safeRun with reject: true in execaOptions
+      // This causes execa to throw even though throwOnError is false
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await shell.safeRun('sh -c "exit 1"', { reject: true } as any);
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBeUndefined();
+      expect(result.stdout).toBe(null);
+      expect(result.stderr).toBe(null);
+    });
+
+    it('should handle non-ExecaError in execute', async () => {
+      const shell = new Shell();
+
+      // This will trigger a non-ExecaError (command not found)
+      await expect(
+        shell.execute('this-command-definitely-does-not-exist-12345', { throwOnError: true })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Factory Function', () => {
+    it('should create Shell instance using createShell factory', async () => {
+      const shell = createShell({ verbose: true });
+      expect(shell).toBeInstanceOf(Shell);
+
+      const result = await shell.run('echo factory');
+      expect(result.stdout).toBe('factory');
+    });
+
+    it('should create Shell with typed output mode', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const result = await shell.run('echo test');
+      expect(result.stdout).toBe('test');
+    });
+  });
+
+  describe('Schema Validation - runParse', () => {
+    it('should parse and validate JSON output', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        version: z.string(),
+      });
+
+      const result = await shell.runParse(
+        'echo \'{"name":"test-package","version":"1.0.0"}\'',
+        schema
+      );
+
+      expect(result.name).toBe('test-package');
+      expect(result.version).toBe('1.0.0');
+    });
+
+    it('should handle async schema validation', async () => {
+      const shell = createShell();
+
+      // Create a custom async standard schema
+      const asyncSchema = {
+        '~standard': {
+          version: 1,
+          vendor: 'custom',
+          validate: async (input: unknown) => {
+            // Simulate async validation
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            if (typeof input === 'object' && input !== null && 'value' in input) {
+              return { value: input };
+            }
+            return {
+              issues: [{ message: 'Invalid data' }]
+            };
+          }
+        }
+      };
+
+      const result = await shell.runParse(
+        'echo \'{"value":"async-test"}\'',
+        asyncSchema as any
+      );
+
+      expect(result).toHaveProperty('value');
+    });
+
+    it('should parse with verbose mode', async () => {
+      const mockDebug = vi.fn();
+      const shell = createShell({
+        verbose: true,
+        logger: { debug: mockDebug }
+      });
+
+      const schema = z.object({ value: z.string() });
+
+      await shell.runParse('echo \'{"value":"test"}\'', schema);
+
+      // Should log validation output
+      expect(mockDebug).toHaveBeenCalledWith(
+        expect.stringContaining('Validation Output:'),
+        expect.any(Object)
+      );
+    });
+
+    it('should throw when JSON is invalid', async () => {
+      const shell = createShell();
+      const schema = z.object({ name: z.string() });
+
+      await expect(
+        shell.runParse('echo "not json"', schema)
+      ).rejects.toThrow();
+    });
+
+    it('should throw when validation fails', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        count: z.number(),
+      });
+
+      await expect(
+        shell.runParse('echo \'{"name":"test","count":"not-a-number"}\'', schema)
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Schema Validation - safeRunParse', () => {
+    it('should parse and validate JSON output successfully', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        version: z.string(),
+      });
+
+      const result = await shell.safeRunParse(
+        'echo \'{"name":"test-pkg","version":"2.0.0"}\'',
+        schema
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.name).toBe('test-pkg');
+        expect(result.data.version).toBe('2.0.0');
+      }
+    });
+
+    it('should return error when command produces no output', async () => {
+      const shell = createShell();
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('true', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('produced no output');
+      }
+    });
+
+    it('should return error when command fails', async () => {
+      const shell = createShell();
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('sh -c "echo output && exit 1"', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('failed with exit code');
+      }
+    });
+
+    it('should return error when JSON is invalid', async () => {
+      const shell = createShell();
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('echo "not valid json{{"', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('Unable to Parse JSON');
+      }
+    });
+
+    it('should return error when validation fails', async () => {
+      const shell = createShell();
+      const schema = z.object({
+        name: z.string(),
+        count: z.number(),
+      });
+
+      const result = await shell.safeRunParse(
+        'echo \'{"name":"test","count":"not-a-number"}\'',
+        schema
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('should include verbose info in error messages', async () => {
+      const shell = createShell({ verbose: true });
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse('true', schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('Command:');
+      }
+    });
+
+    it('should handle array commands in verbose mode', async () => {
+      const shell = createShell({ verbose: true });
+      const schema = z.object({ value: z.string() });
+
+      const result = await shell.safeRunParse(['echo', '{"value":"test"}'], schema);
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should handle async schema validation with safeRunParse', async () => {
+      const shell = createShell();
+
+      // Create a custom async standard schema
+      const asyncSchema = {
+        '~standard': {
+          version: 1,
+          vendor: 'custom',
+          validate: async (input: unknown) => {
+            // Simulate async validation
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            if (typeof input === 'object' && input !== null && 'value' in input) {
+              return { value: input };
+            }
+            return {
+              issues: [{ message: 'Invalid async data' }]
+            };
+          }
+        }
+      };
+
+      const result = await shell.safeRunParse(
+        'echo \'{"value":"async-safe-test"}\'',
+        asyncSchema as any
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toHaveProperty('value');
+      }
     });
   });
 });

@@ -26,11 +26,25 @@ src/
 
 ### Shell Class Design
 
-The `Shell` class (`src/shell.ts`) is the only export and implements:
+The `Shell` class (`src/shell.ts`) provides three public methods:
+
+1. **`run()`** - Recommended for most use cases. Throws on error.
+   - Returns `StrictResult` with stdout and stderr only
+   - Command either succeeds or throws an exception
+
+2. **`safeRun()`** - Never throws. Returns error result instead.
+   - Returns `SafeResult` with stdout, stderr, exitCode, and success flag
+   - Always succeeds, check `result.success` to determine outcome
+
+3. **`execute()`** - Low-level method with explicit throwOnError control
+   - Pass `{ throwOnError: true }` for run() behavior
+   - Pass `{ throwOnError: false }` for safeRun() behavior
+
+**Implementation Details:**
 
 1. **Output Modes** - Three strategies for handling stdout/stderr:
    - `capture`: Pipes output for programmatic access (default)
-   - `live`: Inherits stdio, streams to console in real-time
+   - `live`: Inherits stdio, streams to console in real-time (returns null for stdout/stderr)
    - `all`: Combines both - captures AND streams simultaneously
 
    Implementation detail: Maps output modes to execa stdio configuration using a `stdioMap` object
@@ -50,9 +64,10 @@ The `Shell` class (`src/shell.ts`) is the only export and implements:
 
 ### Key Interfaces
 
-- `ShellOptions`: Constructor configuration (defaultOutputMode, dryRun, verbose, throwOnError, throwMode, logger)
+- `ShellOptions`: Constructor configuration (defaultOutputMode, dryRun, verbose, throwMode, logger)
 - `RunOptions`: Per-command overrides, extends `ExecaOptions` from execa
-- `RunResult`: Structured return value (stdout, stderr, exitCode, isError, isSuccess)
+- `StrictResult`: Return type for `run()` (stdout, stderr)
+- `SafeResult`: Return type for `safeRun()` (stdout, stderr, exitCode, success)
 
 ## Development Commands
 
@@ -73,9 +88,10 @@ The build uses Babel's `annotate-pure-calls` plugin for better tree-shaking.
 pnpm test               # Run tests in watch mode (Vitest)
 pnpm test:ci            # Run tests once (for CI)
 pnpm test:coverage      # Generate coverage report
+pnpm test:coverage:feedback  # Run coverage with detailed feedback on uncovered lines
 ```
 
-Note: Currently no test files exist in the repository. Tests should be added as `*.test.ts` or `*.spec.ts` files (they're excluded from builds).
+Tests are located in `test/shell.test.ts` and focus on Shell class logic (not execa features).
 
 ### Linting & Type Checking
 ```bash
@@ -115,7 +131,12 @@ this.logger?.(`$ ${args.join(' ')}`);
 ```
 
 ### Error Handling Strategy
-When catching `ExecaError`, the class checks `throwOnError` before re-throwing. If disabled, it returns a `RunResult` with `isError: true` instead of throwing.
+Three approaches to error handling:
+- `run()`: Always throws on error (uses `reject: true` in execa)
+- `safeRun()`: Never throws, returns result with `success: false` (uses `reject: false` in execa)
+- `execute({ throwOnError })`: Explicit control over throw behavior
+
+When using `safeRun()` or `execute({ throwOnError: false })`, check `result.success` to determine if the command succeeded.
 
 ### Stdio Configuration
 Output modes are implemented by mapping to execa's stdio arrays:

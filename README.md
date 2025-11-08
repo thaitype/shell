@@ -21,9 +21,11 @@ Running shell commands in Node.js often involves repetitive boilerplate and deal
 
 - **Multiple output modes**: Capture output, stream live, or do both simultaneously
 - **Dry-run mode**: Test your scripts without executing actual commands
-- **Verbose logging**: Automatically log all executed commands
+- **Verbose logging**: Automatically log all executed commands with contextual information
 - **Flexible error handling**: Choose to throw on errors or handle them gracefully
-- **Custom logger support**: Integrate with your preferred logging solution
+- **Schema validation**: Parse and validate JSON output with Standard Schema (Zod, Valibot, etc.)
+- **Custom logger support**: Integrate with your preferred logging solution (debug/warn methods with context)
+- **Deep merge options**: Shell-level defaults are deep merged with command-level options
 - **Type-safe**: Written in TypeScript with full type definitions
 - **ESM-first**: Modern ES modules support
 - **Zero configuration**: Sensible defaults that work out of the box
@@ -52,10 +54,10 @@ bun add @thaitype/shell
 ## Basic Usage
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
 // Create a shell instance
-const shell = new Shell();
+const shell = createShell();
 
 // Run a command
 const result = await shell.run('echo "Hello World"');
@@ -70,9 +72,9 @@ console.log(result.stdout); // "Hello World"
 Perfect for build scripts and CI/CD pipelines where you want to see what's being executed:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell({
+const shell = createShell({
   verbose: true  // Logs every command before execution
 });
 
@@ -90,9 +92,9 @@ await shell.run('npm run build');
 Test your automation scripts without actually executing commands:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell({
+const shell = createShell({
   dryRun: true,   // Commands are logged but not executed
   verbose: true
 });
@@ -114,9 +116,9 @@ console.log('Dry run complete - no actual changes made!');
 Control how command output is handled:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell();
+const shell = createShell();
 
 // Capture mode (default): Capture output for programmatic use
 const result1 = await shell.run('ls -la', { outputMode: 'capture' });
@@ -134,18 +136,17 @@ console.log('Build output was:', result2.stdout);
 
 ### 4. Graceful Error Handling
 
-Handle command failures without throwing exceptions:
+Handle command failures without throwing exceptions using `safeRun()`:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell({
-  throwOnError: false  // Don't throw on non-zero exit codes
-});
+const shell = createShell();
 
-const result = await shell.run('some-command-that-might-fail');
+// safeRun() never throws, returns error result instead
+const result = await shell.safeRun('some-command-that-might-fail');
 
-if (result.isError) {
+if (!result.success) {
   console.error('Command failed with exit code:', result.exitCode);
   console.error('Error output:', result.stderr);
   // Handle the error gracefully
@@ -154,27 +155,81 @@ if (result.isError) {
 }
 ```
 
+### 5. Schema Validation with JSON Output
+
+Parse and validate JSON output from commands using Standard Schema:
+
+```typescript
+import { createShell } from '@thaitype/shell';
+import { z } from 'zod';
+
+const shell = createShell();
+
+// Define a schema for package.json
+const packageSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  dependencies: z.record(z.string()).optional(),
+});
+
+// Parse and validate - throws if invalid
+const pkg = await shell.runParse('cat package.json', packageSchema);
+console.log(`Package: ${pkg.name}@${pkg.version}`);
+
+// Safe parse - returns result object
+const apiSchema = z.object({
+  status: z.string(),
+  data: z.array(z.object({
+    id: z.number(),
+    name: z.string(),
+  })),
+});
+
+const result = await shell.safeRunParse(
+  'curl -s https://api.example.com/users',
+  apiSchema
+);
+
+if (result.success) {
+  result.data.data.forEach(user => {
+    console.log(`User: ${user.name} (${user.id})`);
+  });
+} else {
+  console.error('API validation failed:', result.error);
+}
+```
+
 ## API
+
+### `createShell(options?)` (Recommended)
+
+Factory function to create a new Shell instance with better type inference.
+
+**Recommended:** Use `createShell()` instead of `new Shell()` for better developer experience and automatic type inference of the default output mode.
+
+```typescript
+import { createShell } from '@thaitype/shell';
+
+// Type inference automatically detects 'live' as default mode
+const shell = createShell({ outputMode: 'live' });
+```
 
 ### `new Shell(options?)`
 
-Creates a new Shell instance with the specified configuration.
+Alternative constructor for creating a Shell instance.
 
 #### Options
 
 ```typescript
 interface ShellOptions {
   /** Default output mode applied to all runs unless overridden */
-  defaultOutputMode?: OutputMode; // 'capture' | 'live' | 'all'
+  outputMode?: OutputMode; // 'capture' | 'live' | 'all', default: 'capture'
 
   /** If true, print commands but skip actual execution */
-  dryRun?: boolean;
+  dryRun?: boolean; // default: false
 
   /** If true, log every executed command */
-  verbose?: boolean;
-
-  /** If true, throw an error when a command exits with non-zero code */
-  throwOnError?: boolean; // default: true
+  verbose?: boolean; // default: false
 
   /**
    * Controls how errors are thrown when a command fails.
@@ -183,38 +238,79 @@ interface ShellOptions {
    */
   throwMode?: 'simple' | 'raw'; // default: 'simple'
 
-  /** Optional custom logger function for command output */
-  logger?: (message: string) => void;
+  /**
+   * Optional custom logger for command output and diagnostics.
+   * Provides two logging methods:
+   * - debug(message, context) - Called for verbose command logging
+   * - warn(message, context) - Called for warnings
+   *
+   * The context parameter includes the command and final execa options.
+   */
+  logger?: ShellLogger;
+
+  /**
+   * Default execa options applied to all command executions.
+   * When command-level execaOptions are provided, they are deep merged
+   * with shell-level options. Command-level options override shell-level.
+   */
+  execaOptions?: ExecaOptions;
+}
+
+interface ShellLogger {
+  /** Called for verbose command logging. Defaults to console.debug */
+  debug?(message: string, context: ShellLogContext): void;
+
+  /** Called for warnings. Defaults to console.warn */
+  warn?(message: string, context: ShellLogContext): void;
+}
+
+interface ShellLogContext {
+  /** The command being executed */
+  command: string | string[];
+
+  /** Execa options used for the command execution */
+  execaOptions: ExecaOptions;
 }
 ```
 
 ### `shell.run(command, options?)`
 
-Executes a shell command and returns a structured result.
+Executes a shell command that **throws on error**. Recommended for most use cases where you want to fail fast.
 
 #### Parameters
 
 - `command: string | string[]` - The command to execute. Can be a string (with automatic parsing) or an array of arguments.
 - `options?: RunOptions` - Optional execution options.
 
-#### RunOptions
+#### Returns
 
 ```typescript
-interface RunOptions extends ExecaOptions {
-  /** Override the output behavior for this specific command */
-  outputMode?: OutputMode; // 'capture' | 'live' | 'all'
+interface StrictResult {
+  /** Captured stdout output, or null if not captured */
+  stdout: string | null;
 
-  /** Whether to throw error on non-zero exit */
-  throwOnError?: boolean;
+  /** Captured stderr output, or null if not captured */
+  stderr: string | null;
 }
 ```
 
-Inherits all options from [execa's Options](https://github.com/sindresorhus/execa#options).
+**Throws**: Error when command exits with non-zero code (format depends on `throwMode`).
+
+### `shell.safeRun(command, options?)`
+
+Executes a shell command that **never throws**. Returns error result instead.
+
+Use this when you want to handle errors programmatically without try/catch.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `options?: RunOptions` - Optional execution options.
 
 #### Returns
 
 ```typescript
-interface RunResult {
+interface SafeResult {
   /** Captured stdout output, or null if not captured */
   stdout: string | null;
 
@@ -224,11 +320,125 @@ interface RunResult {
   /** Exit code returned by the executed process */
   exitCode: number | undefined;
 
-  /** Indicates whether the command exited with an error */
-  isError: boolean;
+  /** True if command exited with code 0 */
+  success: boolean;
+}
+```
 
-  /** Indicates whether the command executed successfully */
-  isSuccess: boolean;
+### `shell.execute(command, options?)`
+
+Low-level method with explicit `throwOnError` control.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `options?: RunOptions & { throwOnError?: boolean }` - Optional execution options including throwOnError flag.
+
+#### RunOptions
+
+```typescript
+interface RunOptions extends ExecaOptions {
+  /** Override the output behavior for this specific command */
+  outputMode?: OutputMode; // 'capture' | 'live' | 'all'
+
+  /** Override verbose logging for this specific command */
+  verbose?: boolean;
+
+  /** Override dry-run mode for this specific command */
+  dryRun?: boolean;
+}
+```
+
+Inherits all options from [execa's Options](https://github.com/sindresorhus/execa#options).
+
+**Deep Merge Behavior:** When both shell-level `execaOptions` and command-level options are provided, they are deep merged using the `deepmerge` library. Command-level options take precedence over shell-level options. For objects like `env`, the properties are merged. For primitives like `timeout`, the command-level value overrides the shell-level value.
+
+### `shell.runParse(command, schema, options?)`
+
+Execute a command, parse its stdout as JSON, and validate it against a [Standard Schema](https://github.com/standard-schema/standard-schema).
+
+**Throws on error** - Command failure or validation failure will throw an exception.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `schema: StandardSchemaV1` - A Standard Schema to validate the JSON output.
+- `options?: RunOptions` - Optional execution options.
+
+#### Returns
+
+- Type-safe parsed and validated output based on the schema.
+
+#### Throws
+
+- Error when command fails
+- Error when output is not valid JSON
+- Error when output doesn't match the schema
+
+**Example with Zod:**
+
+```typescript
+import { createShell } from '@thaitype/shell';
+import { z } from 'zod';
+
+const shell = createShell();
+
+const packageSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+});
+
+// Execute command and validate JSON output
+const pkg = await shell.runParse(
+  'cat package.json',
+  packageSchema
+);
+
+console.log(pkg.name, pkg.version); // Type-safe!
+```
+
+### `shell.safeRunParse(command, schema, options?)`
+
+Execute a command, parse its stdout as JSON, and validate it against a Standard Schema.
+
+**Never throws** - Returns a result object with success/error information.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `schema: StandardSchemaV1` - A Standard Schema to validate the JSON output.
+- `options?: RunOptions` - Optional execution options.
+
+#### Returns
+
+```typescript
+type StandardResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: Array<{ message: string }> };
+```
+
+**Example with Zod:**
+
+```typescript
+import { createShell } from '@thaitype/shell';
+import { z } from 'zod';
+
+const shell = createShell();
+
+const userSchema = z.object({
+  username: z.string(),
+  id: z.number(),
+});
+
+const result = await shell.safeRunParse(
+  'curl -s https://api.example.com/user',
+  userSchema
+);
+
+if (result.success) {
+  console.log('User:', result.data.username);
+} else {
+  console.error('Validation failed:', result.error);
 }
 ```
 
@@ -240,10 +450,34 @@ interface RunResult {
 
 ## Advanced Examples
 
+### Using run() vs safeRun()
+
+```typescript
+import { createShell } from '@thaitype/shell';
+
+const shell = createShell();
+
+// run() - Throws on error (fail fast)
+try {
+  const result = await shell.run('npm test');
+  console.log('Tests passed!', result.stdout);
+} catch (error) {
+  console.error('Tests failed:', error.message);
+}
+
+// safeRun() - Never throws, check success flag
+const result = await shell.safeRun('npm test');
+if (result.success) {
+  console.log('Tests passed!', result.stdout);
+} else {
+  console.error('Tests failed with exit code:', result.exitCode);
+}
+```
+
 ### Custom Logger Integration
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 import winston from 'winston';
 
 const logger = winston.createLogger({
@@ -252,29 +486,52 @@ const logger = winston.createLogger({
   transports: [new winston.transports.Console()]
 });
 
-const shell = new Shell({
+const shell = createShell({
   verbose: true,
-  logger: (message) => logger.info(message)
+  logger: {
+    debug: (message, context) => {
+      logger.debug(message, {
+        command: context.command,
+        cwd: context.execaOptions.cwd
+      });
+    },
+    warn: (message, context) => {
+      logger.warn(message, { command: context.command });
+    }
+  }
 });
 
 await shell.run('npm install');
-// Commands are logged using Winston
+// Commands are logged using Winston with contextual information
 ```
 
 ### Combining with Execa Options
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell();
+// Shell-level default options
+const shell = createShell({
+  execaOptions: {
+    env: { API_KEY: 'default-key', NODE_ENV: 'development' },
+    timeout: 5000,
+    cwd: '/default/directory'
+  }
+});
 
-// Pass any execa options
+// Command-level options are deep merged with shell-level
 const result = await shell.run('node script.js', {
-  cwd: '/custom/directory',
-  env: { NODE_ENV: 'production' },
-  timeout: 30000,
+  env: { NODE_ENV: 'production', EXTRA: 'value' },  // Deep merged
+  timeout: 30000,  // Overrides shell-level timeout
   outputMode: 'capture'
 });
+
+// Resulting options:
+// {
+//   env: { API_KEY: 'default-key', NODE_ENV: 'production', EXTRA: 'value' },
+//   timeout: 30000,
+//   cwd: '/default/directory'
+// }
 ```
 
 ## License
