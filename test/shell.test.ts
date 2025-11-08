@@ -96,68 +96,68 @@ describe('Shell', () => {
     });
 
     it('should log commands in dry run mode when verbose', async () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
       const shell = new Shell({
         dryRun: true,
         verbose: true,
-        logger: mockLogger
+        logger: { debug: mockDebug }
       });
 
       await shell.run('echo test');
 
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
 
     it('should not log commands in dry run mode without verbose', async () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
       const shell = new Shell({
         dryRun: true,
         verbose: false,
-        logger: mockLogger
+        logger: { debug: mockDebug }
       });
 
       await shell.run('echo test');
 
       // dryRun alone logs, so it should still log
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
   });
 
   describe('Verbose Mode', () => {
     it('should log commands when verbose is enabled', async () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
       const shell = new Shell({
         verbose: true,
-        logger: mockLogger
+        logger: { debug: mockDebug }
       });
 
       await shell.run('echo test');
 
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
 
     it('should not log commands when verbose is disabled', async () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
       const shell = new Shell({
         verbose: false,
-        logger: mockLogger
+        logger: { debug: mockDebug }
       });
 
       await shell.run('echo test');
 
-      expect(mockLogger).not.toHaveBeenCalled();
+      expect(mockDebug).not.toHaveBeenCalled();
     });
 
     it('should log array commands correctly', async () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
       const shell = new Shell({
         verbose: true,
-        logger: mockLogger
+        logger: { debug: mockDebug }
       });
 
       await shell.run(['echo', 'hello', 'world']);
 
-      expect(mockLogger).toHaveBeenCalledWith('$ echo hello world');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo hello world', expect.any(Object));
     });
   });
 
@@ -256,39 +256,39 @@ describe('Shell', () => {
   describe('Logger Integration', () => {
     it('should use custom logger when provided', async () => {
       const logs: string[] = [];
-      const customLogger = (msg: string) => logs.push(msg);
+      const customDebug = (msg: string) => logs.push(msg);
 
       const shell = new Shell({
         verbose: true,
-        logger: customLogger
+        logger: { debug: customDebug }
       });
       await shell.run('echo test');
 
       expect(logs).toContain('$ echo test');
     });
 
-    it('should use console.log by default', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    it('should use console.debug by default', async () => {
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
       const shell = new Shell({ verbose: true });
 
       await shell.run('echo test');
 
-      expect(consoleSpy).toHaveBeenCalledWith('$ echo test');
+      expect(consoleSpy).toHaveBeenCalledWith('$ echo test', expect.any(Object));
       consoleSpy.mockRestore();
     });
 
     it('should call logger for both verbose and dryRun', async () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
       const shell = new Shell({
         verbose: true,
         dryRun: true,
-        logger: mockLogger
+        logger: { debug: mockDebug }
       });
 
       await shell.run('echo test');
 
-      expect(mockLogger).toHaveBeenCalledTimes(1);
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
   });
 
@@ -344,13 +344,17 @@ describe('Shell', () => {
     });
 
     it('should accept all valid options', () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
+      const mockWarn = vi.fn();
       const shell = new Shell({
         outputMode: 'capture',
         dryRun: false,
         verbose: true,
         throwMode: 'simple',
-        logger: mockLogger
+        logger: {
+          debug: mockDebug,
+          warn: mockWarn
+        }
       });
 
       expect(shell).toBeInstanceOf(Shell);
@@ -402,15 +406,15 @@ describe('Shell', () => {
     });
 
     it('should override verbose at command level', async () => {
-      const mockLogger = vi.fn();
+      const mockDebug = vi.fn();
       const shell = new Shell({
         verbose: false,
-        logger: mockLogger
+        logger: { debug: mockDebug }
       });
 
       // This command should log because we override verbose to true
       await shell.run('echo test', { verbose: true });
-      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
     });
 
     it('should override dryRun at command level', async () => {

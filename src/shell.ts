@@ -49,6 +49,32 @@ export interface OverridableCommandOptions<Mode extends OutputMode> {
   verbose?: boolean;
 }
 
+export interface ShellLogger {
+  /**
+   * Called when Shell wants to emit a debug-level log.
+   * Defaults to console.debug.
+   */
+  debug?(message: string, context: ShellLogContext): void;
+
+  /**
+   * Called when Shell wants to emit a warning or non-fatal issue.
+   * Defaults to console.warn.
+   */
+  warn?(message: string, context: ShellLogContext): void;
+}
+
+/** Provides contextual info about where the log originated. */
+export interface ShellLogContext {
+  /**
+   * The command that was being executed when the log was generated.
+   */
+  command: string | string[];
+  /**
+   * Execa options used for the command execution.
+   */
+  execaOptions: ExecaOptions;
+}
+
 /**
  * Configuration options for Shell instance.
  *
@@ -69,10 +95,8 @@ export interface ShellOptions<Mode extends OutputMode = 'capture'> extends Overr
   /**
    * Optional custom logger function for command output.
    * If not provided, defaults to `console.log`.
-   *
-   * @default console.log
    */
-  logger?: (message: string) => void;
+  logger?: ShellLogger;
 }
 
 /**
@@ -179,7 +203,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   private dryRun: boolean;
   private verbose: boolean;
   private throwMode: 'simple' | 'raw';
-  private logger?: (message: string) => void;
+  private logger: ShellLogger;
 
   /**
    * Static factory method (alias for createShell).
@@ -221,7 +245,10 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
     this.throwMode = options.throwMode ?? 'simple';
-    this.logger = options.logger ?? console.log;
+    this.logger = {
+      debug: options.logger?.debug ?? ((message: string, context: ShellLogContext) => console.debug(message, context)),
+      warn: options.logger?.warn ?? ((message: string, context: ShellLogContext) => console.warn(message, context)),
+    };
   }
 
   /**
@@ -273,8 +300,22 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
       all: { stdout: ['pipe', 'inherit'], stderr: ['pipe', 'inherit'] },
     };
 
+    // Extract our custom properties to avoid passing them to execa
+    const { outputMode: _, verbose: __, dryRun: ___, ...execaOptions } = options ?? {};
+
+    const finalExecaOptions: ExecaOptions = {
+      ...stdioMap[outputMode],
+      reject: options?.throwOnError ?? true,
+      ...execaOptions,
+    };
+
+    const logContext: ShellLogContext = {
+      command: cmd,
+      execaOptions: finalExecaOptions,
+    };
+
     if (verbose || dryRun) {
-      this.logger?.(`$ ${args.join(' ')}`);
+      this.logger.debug?.(`$ ${args.join(' ')}`, logContext);
     }
 
     if (dryRun) {
@@ -282,14 +323,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     }
 
     try {
-      // Extract our custom properties to avoid passing them to execa
-      const { outputMode: _, verbose: __, dryRun: ___, ...execaOptions } = options ?? {};
-
-      const result = await execa(program, cmdArgs, {
-        ...stdioMap[outputMode],
-        reject: options?.throwOnError ?? true,
-        ...execaOptions,
-      });
+      const result = await execa(program, cmdArgs, finalExecaOptions);
 
       return {
         stdout: result.stdout ? String(result.stdout) : null,
@@ -392,7 +426,15 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     const result = await this.run<Mode>(cmd, options);
     const verbose = options?.verbose ?? this.verbose;
     const verboseOutput = verbose ? `\nStdout: ${result.stdout}\nStderr: ${result.stderr}` : '';
-    if (verbose) this.logger?.('Validation Output:' + verboseOutput);
+    if (verbose) {
+      // Extract our custom properties to get clean execa options
+      const { outputMode: _, verbose: __, dryRun: ___, ...execaOptions } = options ?? {};
+      const logContext: ShellLogContext = {
+        command: cmd,
+        execaOptions: execaOptions,
+      };
+      this.logger.debug?.('Validation Output:' + verboseOutput, logContext);
+    }
     return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
   }
 
