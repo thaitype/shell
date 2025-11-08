@@ -17,19 +17,19 @@ type CaptureForMode<M extends OutputMode> =
   M extends 'live' ? false : true;
 
 /** Configuration options for Shell instance */
-export interface ShellOptions<ThrowOnError extends boolean = true, Mode extends OutputMode = 'capture'> {
+export interface ShellOptions<Mode extends OutputMode = 'capture'> {
   /** Default output mode applied to all runs unless overridden */
   defaultOutputMode?: Mode;
   /** If true, print commands but skip actual execution */
   dryRun?: boolean;
   /** If true, log every executed command */
   verbose?: boolean;
-  /** If true, throw an error when a command exits with non-zero code, @default true */
-  throwOnError?: ThrowOnError;
   /**
    * Controls how errors are thrown when a command fails.
    * - `"simple"` → Throws a short, human-readable error message.
    * - `"raw"` → Throws the full ExecaError object with complete details.
+   * 
+   * Only applies when using `run()` method that throws on error.
    *
    * @default "simple"
    */
@@ -41,14 +41,12 @@ export interface ShellOptions<ThrowOnError extends boolean = true, Mode extends 
 /**
  * We handle some properties of ExecaOptions internally, so we omit them here to avoid conflicts.
  */
-export type ShellExecaOptions = Omit<ExecaOptions, 'reject'>;
+export type ShellExecaOptions = Omit<ExecaOptions, 'reject' | 'stdout' | 'stderr'>;
 
 /** Options for an individual command execution */
-export interface RunOptions<ThrowOnError extends boolean = true, Mode extends OutputMode = OutputMode> extends ShellExecaOptions {
+export interface RunOptions<Mode extends OutputMode = OutputMode> extends ShellExecaOptions {
   /** Override the output behavior for this specific command */
   outputMode?: Mode;
-  /** Whether to throw error on non-zero exit */
-  throwOnError?: ThrowOnError;
 }
 
 /** The structured result returned by Shell.run() */
@@ -77,17 +75,15 @@ export type RunResult<Throw extends boolean, Mode extends OutputMode> =
  * Factory function to create a new Shell instance for type safety and convenience.
  */
 export function createShell<
-  DefaultThrow extends boolean = true,
   DefaultMode extends OutputMode = OutputMode
->(options: ShellOptions<DefaultThrow, DefaultMode> = {}) {
-  return new Shell<DefaultThrow, DefaultMode>(options);
+>(options: ShellOptions<DefaultMode> = {}) {
+  return new Shell<DefaultMode>(options);
 }
 
-export class Shell<DefaultThrow extends boolean = true, DefaultMode extends OutputMode = 'capture'> {
+export class Shell<DefaultMode extends OutputMode = 'capture'> {
   private defaultOutputMode: OutputMode;
   private dryRun: boolean;
   private verbose: boolean;
-  private throwOnError: boolean;
   private throwMode: 'simple' | 'raw';
   private logger?: (message: string) => void;
 
@@ -97,11 +93,10 @@ export class Shell<DefaultThrow extends boolean = true, DefaultMode extends Outp
    * Create a new Shell instance.
    * @param options - Configuration options for default behavior.
    */
-  constructor(options: ShellOptions<DefaultThrow, DefaultMode> = {}) {
+  constructor(options: ShellOptions<DefaultMode> = {}) {
     this.defaultOutputMode = options.defaultOutputMode ?? 'capture';
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
-    this.throwOnError = options.throwOnError ?? true; // default true
     this.throwMode = options.throwMode ?? 'simple'; // default "simple"
     this.logger = options.logger ?? console.log;
   }
@@ -114,10 +109,9 @@ export class Shell<DefaultThrow extends boolean = true, DefaultMode extends Outp
    * @param options - Optional overrides for this execution.
    * @returns A structured {@link RunResult} containing outputs and exit info.
    */
-  async run<
-    Throw extends boolean = DefaultThrow,
-    Mode extends OutputMode = DefaultMode
-  >(cmd: string | string[], options?: RunOptions<Throw, Mode>): Promise<RunResult<Throw, Mode>> {
+  public async execute<Throw extends boolean = true, Mode extends OutputMode = DefaultMode>(
+    cmd: string | string[], options?: RunOptions<Mode> & { throwOnError?: Throw }
+  ): Promise<RunResult<Throw, Mode>> {
     const args = Array.isArray(cmd) ? cmd : parseArgsStringToArgv(cmd);
 
     const [program, ...cmdArgs] = args;
@@ -144,7 +138,7 @@ export class Shell<DefaultThrow extends boolean = true, DefaultMode extends Outp
     try {
       const result = await execa(program, cmdArgs, {
         ...stdioMap[outputMode],
-        reject: options?.throwOnError ?? this.throwOnError,
+        reject: options?.throwOnError ?? true,
         ...options,
       });
 
@@ -157,7 +151,7 @@ export class Shell<DefaultThrow extends boolean = true, DefaultMode extends Outp
       } as RunResult<Throw, Mode>;
     } catch (error: unknown) {
       if (error instanceof ExecaError) {
-        if (this.throwOnError || options?.throwOnError) {
+        if (options?.throwOnError) {
           if (this.throwMode === 'raw') {
             throw error;
           } else {
@@ -175,5 +169,19 @@ export class Shell<DefaultThrow extends boolean = true, DefaultMode extends Outp
         isSuccess: false,
       } as RunResult<Throw, Mode>;
     }
+  }
+
+  public run<Mode extends OutputMode = DefaultMode>(
+    cmd: string | string[],
+    options?: RunOptions<Mode>
+  ): Promise<RunResult<true, Mode>> {
+    return this.execute<true, Mode>(cmd, { ...options, throwOnError: true });
+  }
+
+  public safeRun<Mode extends OutputMode = DefaultMode>(
+    cmd: string | string[],
+    options?: RunOptions<Mode>
+  ): Promise<RunResult<false, Mode>> {
+    return this.execute<false, Mode>(cmd, { ...options, throwOnError: false });
   }
 }
