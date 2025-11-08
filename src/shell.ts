@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { execa, type Options as ExecaOptions, ExecaError } from 'execa';
 import parseArgsStringToArgv from 'string-argv';
+import deepmerge from 'deepmerge';
 import { standardSafeValidate, standardValidate, type StandardResult } from './standard-schema.js';
 
 /**
@@ -204,6 +205,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   private verbose: boolean;
   private throwMode: 'simple' | 'raw';
   private logger: ShellLogger;
+  private execaOptions: ShellExecaOptions;
 
   /**
    * Static factory method (alias for createShell).
@@ -245,6 +247,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
     this.throwMode = options.throwMode ?? 'simple';
+    this.execaOptions = options.execaOptions ?? {};
     this.logger = {
       debug: options.logger?.debug ?? ((message: string, context: ShellLogContext) => console.debug(message, context)),
       warn: options.logger?.warn ?? ((message: string, context: ShellLogContext) => console.warn(message, context)),
@@ -301,12 +304,16 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     };
 
     // Extract our custom properties to avoid passing them to execa
-    const { outputMode: _, verbose: __, dryRun: ___, ...execaOptions } = options ?? {};
+    const { outputMode: _, verbose: __, dryRun: ___, ...commandExecaOptions } = options ?? {};
+
+    // Deep merge shell-level and command-level execa options
+    // Command-level options override shell-level options
+    const mergedExecaOptions = deepmerge(this.execaOptions, commandExecaOptions);
 
     const finalExecaOptions: ExecaOptions = {
       ...stdioMap[outputMode],
       reject: options?.throwOnError ?? true,
-      ...execaOptions,
+      ...mergedExecaOptions,
     };
 
     const logContext: ShellLogContext = {
