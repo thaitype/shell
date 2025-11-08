@@ -21,10 +21,11 @@ Running shell commands in Node.js often involves repetitive boilerplate and deal
 
 - **Multiple output modes**: Capture output, stream live, or do both simultaneously
 - **Dry-run mode**: Test your scripts without executing actual commands
-- **Verbose logging**: Automatically log all executed commands
+- **Verbose logging**: Automatically log all executed commands with contextual information
 - **Flexible error handling**: Choose to throw on errors or handle them gracefully
 - **Schema validation**: Parse and validate JSON output with Standard Schema (Zod, Valibot, etc.)
-- **Custom logger support**: Integrate with your preferred logging solution
+- **Custom logger support**: Integrate with your preferred logging solution (debug/warn methods with context)
+- **Deep merge options**: Shell-level defaults are deep merged with command-level options
 - **Type-safe**: Written in TypeScript with full type definitions
 - **ESM-first**: Modern ES modules support
 - **Zero configuration**: Sensible defaults that work out of the box
@@ -210,7 +211,7 @@ Factory function to create a new Shell instance with better type inference.
 import { createShell } from '@thaitype/shell';
 
 // Type inference automatically detects 'live' as default mode
-const shell = createShell({ defaultOutputMode: 'live' });
+const shell = createShell({ outputMode: 'live' });
 ```
 
 ### `new Shell(options?)`
@@ -222,13 +223,13 @@ Alternative constructor for creating a Shell instance.
 ```typescript
 interface ShellOptions {
   /** Default output mode applied to all runs unless overridden */
-  defaultOutputMode?: OutputMode; // 'capture' | 'live' | 'all'
+  outputMode?: OutputMode; // 'capture' | 'live' | 'all', default: 'capture'
 
   /** If true, print commands but skip actual execution */
-  dryRun?: boolean;
+  dryRun?: boolean; // default: false
 
   /** If true, log every executed command */
-  verbose?: boolean;
+  verbose?: boolean; // default: false
 
   /**
    * Controls how errors are thrown when a command fails.
@@ -237,8 +238,38 @@ interface ShellOptions {
    */
   throwMode?: 'simple' | 'raw'; // default: 'simple'
 
-  /** Optional custom logger function for command output */
-  logger?: (message: string) => void;
+  /**
+   * Optional custom logger for command output and diagnostics.
+   * Provides two logging methods:
+   * - debug(message, context) - Called for verbose command logging
+   * - warn(message, context) - Called for warnings
+   *
+   * The context parameter includes the command and final execa options.
+   */
+  logger?: ShellLogger;
+
+  /**
+   * Default execa options applied to all command executions.
+   * When command-level execaOptions are provided, they are deep merged
+   * with shell-level options. Command-level options override shell-level.
+   */
+  execaOptions?: ExecaOptions;
+}
+
+interface ShellLogger {
+  /** Called for verbose command logging. Defaults to console.debug */
+  debug?(message: string, context: ShellLogContext): void;
+
+  /** Called for warnings. Defaults to console.warn */
+  warn?(message: string, context: ShellLogContext): void;
+}
+
+interface ShellLogContext {
+  /** The command being executed */
+  command: string | string[];
+
+  /** Execa options used for the command execution */
+  execaOptions: ExecaOptions;
 }
 ```
 
@@ -309,10 +340,18 @@ Low-level method with explicit `throwOnError` control.
 interface RunOptions extends ExecaOptions {
   /** Override the output behavior for this specific command */
   outputMode?: OutputMode; // 'capture' | 'live' | 'all'
+
+  /** Override verbose logging for this specific command */
+  verbose?: boolean;
+
+  /** Override dry-run mode for this specific command */
+  dryRun?: boolean;
 }
 ```
 
 Inherits all options from [execa's Options](https://github.com/sindresorhus/execa#options).
+
+**Deep Merge Behavior:** When both shell-level `execaOptions` and command-level options are provided, they are deep merged using the `deepmerge` library. Command-level options take precedence over shell-level options. For objects like `env`, the properties are merged. For primitives like `timeout`, the command-level value overrides the shell-level value.
 
 ### `shell.runParse(command, schema, options?)`
 
@@ -449,11 +488,21 @@ const logger = winston.createLogger({
 
 const shell = createShell({
   verbose: true,
-  logger: (message) => logger.info(message)
+  logger: {
+    debug: (message, context) => {
+      logger.debug(message, {
+        command: context.command,
+        cwd: context.execaOptions.cwd
+      });
+    },
+    warn: (message, context) => {
+      logger.warn(message, { command: context.command });
+    }
+  }
 });
 
 await shell.run('npm install');
-// Commands are logged using Winston
+// Commands are logged using Winston with contextual information
 ```
 
 ### Combining with Execa Options
@@ -461,15 +510,28 @@ await shell.run('npm install');
 ```typescript
 import { createShell } from '@thaitype/shell';
 
-const shell = createShell();
+// Shell-level default options
+const shell = createShell({
+  execaOptions: {
+    env: { API_KEY: 'default-key', NODE_ENV: 'development' },
+    timeout: 5000,
+    cwd: '/default/directory'
+  }
+});
 
-// Pass any execa options
+// Command-level options are deep merged with shell-level
 const result = await shell.run('node script.js', {
-  cwd: '/custom/directory',
-  env: { NODE_ENV: 'production' },
-  timeout: 30000,
+  env: { NODE_ENV: 'production', EXTRA: 'value' },  // Deep merged
+  timeout: 30000,  // Overrides shell-level timeout
   outputMode: 'capture'
 });
+
+// Resulting options:
+// {
+//   env: { API_KEY: 'default-key', NODE_ENV: 'production', EXTRA: 'value' },
+//   timeout: 30000,
+//   cwd: '/default/directory'
+// }
 ```
 
 ## License
