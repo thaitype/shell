@@ -199,7 +199,7 @@ export function createShell<DefaultMode extends OutputMode = OutputMode>(options
  * ```
  */
 export class Shell<DefaultMode extends OutputMode = 'capture'> {
-  private defaultOutputMode: OutputMode;
+  private outputMode: OutputMode;
   private dryRun: boolean;
   private verbose: boolean;
   private throwMode: 'simple' | 'raw';
@@ -241,7 +241,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * ```
    */
   constructor(options: ShellOptions<DefaultMode> = {}) {
-    this.defaultOutputMode = options.outputMode ?? 'capture';
+    this.outputMode = options.outputMode ?? 'capture';
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
     this.throwMode = options.throwMode ?? 'simple';
@@ -290,7 +290,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     }
 
     // Merge command-level overrides with instance defaults
-    const outputMode = options?.outputMode ?? this.defaultOutputMode;
+    const outputMode = options?.outputMode ?? this.outputMode;
     const verbose = options?.verbose ?? this.verbose;
     const dryRun = options?.dryRun ?? this.dryRun;
 
