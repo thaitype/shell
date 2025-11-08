@@ -13,7 +13,7 @@
  * ```typescript
  * const shell = new Shell();
  * const result = await shell.safeRun('might-fail');
- * if (result.isError) {
+ * if (!result.isSuccess) {
  *   console.error('Command failed:', result.exitCode);
  * }
  * ```
@@ -136,8 +136,6 @@ export interface StrictResult<Capture extends boolean> {
 export interface SafeResult<Capture extends boolean> extends StrictResult<Capture> {
   /** Exit code returned by the executed process (undefined if command failed to start) */
   exitCode: number | undefined;
-  /** True if the command exited with a non-zero code or failed to execute */
-  isError: boolean;
   /** True if the command exited with code 0 */
   isSuccess: boolean;
 }
@@ -273,7 +271,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     }
 
     if (this.dryRun) {
-      return { stdout: '', stderr: '', exitCode: 0, isError: false, isSuccess: true } as RunResult<Throw, Mode>;
+      return { stdout: '', stderr: '', exitCode: 0, isSuccess: true } as RunResult<Throw, Mode>;
     }
 
     try {
@@ -287,7 +285,6 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stdout: result.stdout ? String(result.stdout) : null,
         stderr: result.stderr ? String(result.stderr) : null,
         exitCode: result.exitCode,
-        isError: result.exitCode !== 0,
         isSuccess: result.exitCode === 0,
       } as RunResult<Throw, Mode>;
     } catch (error: unknown) {
@@ -306,7 +303,6 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stdout: null,
         stderr: null,
         exitCode: undefined,
-        isError: true,
         isSuccess: false,
       } as RunResult<Throw, Mode>;
     }
@@ -349,21 +345,21 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * Execute a command that never throws, returning an error result instead.
    *
    * Use this when you want to handle errors programmatically without try/catch.
-   * Returns a result with exitCode, isError, and isSuccess flags.
+   * Returns a result with exitCode, and isSuccess flags.
    *
    * @template Mode - The output mode for this command (defaults to instance default)
    *
    * @param cmd - Command to execute, as string or array of arguments
    * @param options - Optional overrides for this execution
    *
-   * @returns Result with stdout, stderr, exitCode, isError, and isSuccess
+   * @returns Result with stdout, stderr, exitCode, and isSuccess
    *
    * @example
    * ```typescript
    * const shell = new Shell();
    * const result = await shell.safeRun('lint-code');
    *
-   * if (result.isError) {
+   * if (!result.isSuccess) {
    *   console.warn('Linting failed with exit code:', result.exitCode);
    *   console.warn('Errors:', result.stderr);
    * } else {
