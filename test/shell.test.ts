@@ -40,14 +40,14 @@ describe('Shell', () => {
     });
 
     it('should use specified default mode', async () => {
-      const shell = new Shell({ defaultOutputMode: 'capture' });
+      const shell = new Shell({ outputMode: 'capture' });
       const result = await shell.run('echo "Test"');
 
       expect(result.stdout).toBe('Test');
     });
 
     it('should override default mode with per-command option', async () => {
-      const shell = new Shell({ defaultOutputMode: 'live' });
+      const shell = new Shell({ outputMode: 'live' });
       const result = await shell.run('echo "Override"', { outputMode: 'capture' });
 
       // Override to capture, so stdout should be captured
@@ -97,7 +97,11 @@ describe('Shell', () => {
 
     it('should log commands in dry run mode when verbose', async () => {
       const mockLogger = vi.fn();
-      const shell = new Shell({ dryRun: true, verbose: true, logger: mockLogger });
+      const shell = new Shell({
+        dryRun: true,
+        verbose: true,
+        logger: mockLogger
+      });
 
       await shell.run('echo test');
 
@@ -106,7 +110,11 @@ describe('Shell', () => {
 
     it('should not log commands in dry run mode without verbose', async () => {
       const mockLogger = vi.fn();
-      const shell = new Shell({ dryRun: true, verbose: false, logger: mockLogger });
+      const shell = new Shell({
+        dryRun: true,
+        verbose: false,
+        logger: mockLogger
+      });
 
       await shell.run('echo test');
 
@@ -118,7 +126,10 @@ describe('Shell', () => {
   describe('Verbose Mode', () => {
     it('should log commands when verbose is enabled', async () => {
       const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: true, logger: mockLogger });
+      const shell = new Shell({
+        verbose: true,
+        logger: mockLogger
+      });
 
       await shell.run('echo test');
 
@@ -127,7 +138,10 @@ describe('Shell', () => {
 
     it('should not log commands when verbose is disabled', async () => {
       const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: false, logger: mockLogger });
+      const shell = new Shell({
+        verbose: false,
+        logger: mockLogger
+      });
 
       await shell.run('echo test');
 
@@ -136,7 +150,10 @@ describe('Shell', () => {
 
     it('should log array commands correctly', async () => {
       const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: true, logger: mockLogger });
+      const shell = new Shell({
+        verbose: true,
+        logger: mockLogger
+      });
 
       await shell.run(['echo', 'hello', 'world']);
 
@@ -241,7 +258,10 @@ describe('Shell', () => {
       const logs: string[] = [];
       const customLogger = (msg: string) => logs.push(msg);
 
-      const shell = new Shell({ verbose: true, logger: customLogger });
+      const shell = new Shell({
+        verbose: true,
+        logger: customLogger
+      });
       await shell.run('echo test');
 
       expect(logs).toContain('$ echo test');
@@ -259,7 +279,11 @@ describe('Shell', () => {
 
     it('should call logger for both verbose and dryRun', async () => {
       const mockLogger = vi.fn();
-      const shell = new Shell({ verbose: true, dryRun: true, logger: mockLogger });
+      const shell = new Shell({
+        verbose: true,
+        dryRun: true,
+        logger: mockLogger
+      });
 
       await shell.run('echo test');
 
@@ -322,7 +346,7 @@ describe('Shell', () => {
     it('should accept all valid options', () => {
       const mockLogger = vi.fn();
       const shell = new Shell({
-        defaultOutputMode: 'capture',
+        outputMode: 'capture',
         dryRun: false,
         verbose: true,
         throwMode: 'simple',
@@ -364,17 +388,39 @@ describe('Shell', () => {
     });
 
     it('should use constructor defaultOutputMode by default', async () => {
-      const shell = new Shell({ defaultOutputMode: 'capture' });
+      const shell = new Shell({ outputMode: 'capture' });
       const result = await shell.run('echo test');
 
       expect(result.stdout).toBe('test');
     });
 
     it('should override constructor defaultOutputMode with run option', async () => {
-      const shell = new Shell({ defaultOutputMode: 'live' });
+      const shell = new Shell({ outputMode: 'live' });
       const result = await shell.run('echo test', { outputMode: 'capture' });
 
       expect(result.stdout).toBe('test');
+    });
+
+    it('should override verbose at command level', async () => {
+      const mockLogger = vi.fn();
+      const shell = new Shell({
+        verbose: false,
+        logger: mockLogger
+      });
+
+      // This command should log because we override verbose to true
+      await shell.run('echo test', { verbose: true });
+      expect(mockLogger).toHaveBeenCalledWith('$ echo test');
+    });
+
+    it('should override dryRun at command level', async () => {
+      const shell = new Shell({ dryRun: false });
+
+      // This command should be in dry run mode even though default is false
+      const result = await shell.safeRun('sh -c "exit 1"', { dryRun: true });
+
+      expect(result.success).toBe(true); // Dry run always succeeds
+      expect(result.exitCode).toBe(0);
     });
   });
 

@@ -6,7 +6,7 @@ const schema = z.object({
 });
 
 async function main() {
-  const shell = createShell({ verbose: true });
+  const shell = createShell();
   const result = await shell.runParse(`echo '{ "username": "John" }'`, schema);
   console.log("Command Output:", result.username);
 }

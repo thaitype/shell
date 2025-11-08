@@ -1,7 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 
 /**
- * Validate input against a Standard Schema. 
+ * Validate input against a Standard Schema.
  * @see https://github.com/standard-schema/standard-schema
  */
 export async function standardValidate<T extends StandardSchemaV1>(
@@ -19,13 +19,15 @@ export async function standardValidate<T extends StandardSchemaV1>(
   return result.value;
 }
 
-export type StandardResult<T> = {
-  success: true;
-  data: T;
-} | {
-  success: false;
-  error: ReadonlyArray<StandardSchemaV1.Issue>;
-};
+export type StandardResult<T> =
+  | {
+      success: true;
+      data: T;
+    }
+  | {
+      success: false;
+      error: ReadonlyArray<StandardSchemaV1.Issue>;
+    };
 
 export async function standardSafeValidate<T extends StandardSchemaV1>(
   schema: T,
@@ -39,11 +41,11 @@ export async function standardSafeValidate<T extends StandardSchemaV1>(
     return {
       success: false,
       error: result.issues,
-    }
+    };
   }
 
   return {
     success: true,
     data: result.value as StandardSchemaV1.InferOutput<T>,
-  }
+  };
 }

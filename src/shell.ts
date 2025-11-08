@@ -16,22 +16,23 @@ export type OutputMode = 'capture' | 'live' | 'all';
  * Type utility to determine if an output mode captures output.
  * Returns false for 'live' mode, true for 'capture' and 'all'.
  */
-type CaptureForMode<M extends OutputMode> =
-  M extends 'live' ? false : true;
+type CaptureForMode<M extends OutputMode> = M extends 'live' ? false : true;
 
 /**
- * Configuration options for Shell instance.
- *
- * @template Mode - The default output mode type (defaults to 'capture')
+ * Default options that can be overridden per command execution.
  */
-export interface ShellOptions<Mode extends OutputMode = 'capture'> {
+export interface OverridableCommandOptions<Mode extends OutputMode> {
+  /**
+   * Default execa options applied to all command executions.
+   * Can be overridden by individual run options.
+   */
+  execaOptions?: ShellExecaOptions;
   /**
    * Default output mode applied to all runs unless overridden.
    *
    * @default 'capture'
    */
-  defaultOutputMode?: Mode;
-
+  outputMode?: Mode;
   /**
    * If true, print commands but skip actual execution.
    * Useful for testing scripts without making real changes.
@@ -39,7 +40,6 @@ export interface ShellOptions<Mode extends OutputMode = 'capture'> {
    * @default false
    */
   dryRun?: boolean;
-
   /**
    * If true, log every executed command to the logger.
    * Helpful for debugging and CI/CD pipelines.
@@ -47,7 +47,14 @@ export interface ShellOptions<Mode extends OutputMode = 'capture'> {
    * @default false
    */
   verbose?: boolean;
+}
 
+/**
+ * Configuration options for Shell instance.
+ *
+ * @template Mode - The default output mode type (defaults to 'capture')
+ */
+export interface ShellOptions<Mode extends OutputMode = 'capture'> extends OverridableCommandOptions<Mode> {
   /**
    * Controls how errors are thrown when a command fails.
    * - `"simple"` → Throws a short, human-readable error message with command, exit code, and stderr.
@@ -70,25 +77,24 @@ export interface ShellOptions<Mode extends OutputMode = 'capture'> {
 
 /**
  * Execa options that can be passed to Shell methods.
- * We handle some properties internally (`reject`, `stdout`, `stderr`), so we omit them to avoid conflicts.
+ * We handle some properties internally, so we omit them to avoid conflicts:
+ * - `reject` - handled by throwOnError
+ * - `verbose` - we use our own boolean verbose flag
+ * - `stdout`/`stderr` - handled by outputMode
  *
  * All other execa options (like `cwd`, `env`, `timeout`) can be passed through.
  */
-export type ShellExecaOptions = Omit<ExecaOptions, 'reject' | 'stdout' | 'stderr'>;
+export type ShellExecaOptions = Omit<ExecaOptions, 'reject' | 'verbose' | 'stdout' | 'stderr'>;
 
 /**
  * Options for an individual command execution.
- * Extends all execa options except those handled internally.
+ * Extends overridable command options and execa options.
  *
  * @template Mode - The output mode type for this specific command
  */
-export interface RunOptions<Mode extends OutputMode = OutputMode> extends ShellExecaOptions {
-  /**
-   * Override the output behavior for this specific command.
-   * If not provided, uses the default mode from Shell constructor.
-   */
-  outputMode?: Mode;
-}
+export interface RunOptions<Mode extends OutputMode = OutputMode>
+  extends Omit<OverridableCommandOptions<Mode>, 'execaOptions'>,
+    ShellExecaOptions {}
 
 /**
  * Strict result returned by `run()` method (throws on error).
@@ -122,8 +128,7 @@ export interface SafeResult<Capture extends boolean> extends StrictResult<Captur
  * @template Throw - Whether the method throws on error (true for run(), false for safeRun())
  * @template Mode - The output mode used for the command
  */
-export type RunResult<Throw extends boolean, Mode extends OutputMode> =
-  Throw extends true
+export type RunResult<Throw extends boolean, Mode extends OutputMode> = Throw extends true
   ? StrictResult<CaptureForMode<Mode>>
   : SafeResult<CaptureForMode<Mode>>;
 
@@ -137,13 +142,14 @@ export type RunResult<Throw extends boolean, Mode extends OutputMode> =
  *
  * @example
  * ```typescript
- * const shell = createShell({ defaultOutputMode: 'live', verbose: true });
+ * const shell = createShell({
+ *   outputMode: 'live',
+ *   verbose: true
+ * });
  * await shell.run('npm install'); // Output streams to console
  * ```
  */
-export function createShell<
-  DefaultMode extends OutputMode = OutputMode
->(options: ShellOptions<DefaultMode> = {}) {
+export function createShell<DefaultMode extends OutputMode = OutputMode>(options: ShellOptions<DefaultMode> = {}) {
   return new Shell<DefaultMode>(options);
 }
 
@@ -155,12 +161,17 @@ export function createShell<
  *
  * @example Creating a shell instance
  * ```typescript
- * const shell = new Shell({ verbose: true, defaultOutputMode: 'capture' });
+ * const shell = new Shell({
+ *   outputMode: 'capture',
+ *   verbose: true
+ * });
  * ```
  *
  * @example Using the static factory
  * ```typescript
- * const shell = Shell.create({ dryRun: true });
+ * const shell = Shell.create({
+ *   dryRun: true
+ * });
  * ```
  */
 export class Shell<DefaultMode extends OutputMode = 'capture'> {
@@ -172,7 +183,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
 
   /**
    * Static factory method (alias for createShell).
-   * 
+   *
    * Factory function to create a new Shell instance with type inference.
    * Provides better type safety and convenience compared to using `new Shell()`.
    *
@@ -182,7 +193,10 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    *
    * @example
    * ```typescript
-   * const shell = Shell.create({ defaultOutputMode: 'live', verbose: true });
+   * const shell = Shell.create({
+   *   outputMode: 'live',
+   *   verbose: true
+   * });
    * await shell.run('npm install'); // Output streams to console
    * ```
    */
@@ -196,14 +210,14 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * @example
    * ```typescript
    * const shell = new Shell({
+   *   outputMode: 'capture',
    *   verbose: true,
-   *   defaultOutputMode: 'capture',
    *   throwMode: 'simple'
    * });
    * ```
    */
   constructor(options: ShellOptions<DefaultMode> = {}) {
-    this.defaultOutputMode = options.defaultOutputMode ?? 'capture';
+    this.defaultOutputMode = options.outputMode ?? 'capture';
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
     this.throwMode = options.throwMode ?? 'simple';
@@ -238,7 +252,8 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * ```
    */
   public async execute<Throw extends boolean = true, Mode extends OutputMode = DefaultMode>(
-    cmd: string | string[], options?: RunOptions<Mode> & { throwOnError?: Throw }
+    cmd: string | string[],
+    options?: RunOptions<Mode> & { throwOnError?: Throw }
   ): Promise<RunResult<Throw, Mode>> {
     const args = Array.isArray(cmd) ? cmd : parseArgsStringToArgv(cmd);
 
@@ -247,7 +262,10 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
       throw new Error('No command provided.');
     }
 
+    // Merge command-level overrides with instance defaults
     const outputMode = options?.outputMode ?? this.defaultOutputMode;
+    const verbose = options?.verbose ?? this.verbose;
+    const dryRun = options?.dryRun ?? this.dryRun;
 
     const stdioMap: Record<OutputMode, { stdout: string | string[]; stderr: string | string[] }> = {
       capture: { stdout: 'pipe', stderr: 'pipe' },
@@ -255,19 +273,22 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
       all: { stdout: ['pipe', 'inherit'], stderr: ['pipe', 'inherit'] },
     };
 
-    if (this.verbose || this.dryRun) {
+    if (verbose || dryRun) {
       this.logger?.(`$ ${args.join(' ')}`);
     }
 
-    if (this.dryRun) {
+    if (dryRun) {
       return { stdout: '', stderr: '', exitCode: 0, success: true } as RunResult<Throw, Mode>;
     }
 
     try {
+      // Extract our custom properties to avoid passing them to execa
+      const { outputMode: _, verbose: __, dryRun: ___, ...execaOptions } = options ?? {};
+
       const result = await execa(program, cmdArgs, {
         ...stdioMap[outputMode],
         reject: options?.throwOnError ?? true,
-        ...options,
+        ...execaOptions,
       });
 
       return {
@@ -369,8 +390,9 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     options?: RunOptions<Mode>
   ): Promise<StandardSchemaV1.InferOutput<T>> {
     const result = await this.run<Mode>(cmd, options);
-    const verboseOutput = this.verbose ? `\nStdout: ${result.stdout}\nStderr: ${result.stderr}` : '';
-    if (this.verbose) this.logger?.('Validation Output:' + verboseOutput);
+    const verbose = options?.verbose ?? this.verbose;
+    const verboseOutput = verbose ? `\nStdout: ${result.stdout}\nStderr: ${result.stderr}` : '';
+    if (verbose) this.logger?.('Validation Output:' + verboseOutput);
     return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
   }
 
@@ -380,29 +402,30 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     options?: RunOptions<Mode>
   ): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>> {
     const result = await this.safeRun<Mode>(cmd, options);
+    const verbose = options?.verbose ?? this.verbose;
     const fullCommand = Array.isArray(cmd) ? cmd.join(' ') : cmd;
-    const verboseOutput = this.verbose ? `\nStdout: ${result.stdout}\nStderr: ${result.stderr}` : '';
-    const verboseCommand = this.verbose ? `\nCommand: ${fullCommand}` : '';
+    const verboseOutput = verbose ? `\nStdout: ${result.stdout}\nStderr: ${result.stderr}` : '';
+    const verboseCommand = verbose ? `\nCommand: ${fullCommand}` : '';
     const verboseInfo = verboseCommand + verboseOutput;
     if (!result.stdout) {
       return {
         success: false,
-        error: [{ message: `The command produced no output to validate. ${verboseInfo}` }]
-      }
+        error: [{ message: `The command produced no output to validate. ${verboseInfo}` }],
+      };
     }
     if (!result.success) {
       return {
         success: false,
-        error: [{ message: `The command failed with exit code ${result.exitCode}. ${verboseInfo}` }]
-      }
+        error: [{ message: `The command failed with exit code ${result.exitCode}. ${verboseInfo}` }],
+      };
     }
     try {
       return standardSafeValidate(schema, JSON.parse(result.stdout));
     } catch (e: unknown) {
       return {
         success: false,
-        error: [{ message: 'Unable to Parse JSON: ' + (e instanceof Error ? e.message : String(e)) + verboseInfo }]
-      }
+        error: [{ message: 'Unable to Parse JSON: ' + (e instanceof Error ? e.message : String(e)) + verboseInfo }],
+      };
     }
   }
 }
