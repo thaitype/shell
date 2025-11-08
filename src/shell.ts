@@ -38,8 +38,13 @@ export interface ShellOptions<ThrowOnError extends boolean = true, Mode extends 
   logger?: (message: string) => void;
 }
 
+/**
+ * We handle some properties of ExecaOptions internally, so we omit them here to avoid conflicts.
+ */
+export type ShellExecaOptions = Omit<ExecaOptions, 'reject'>;
+
 /** Options for an individual command execution */
-export interface RunOptions<ThrowOnError extends boolean = true, Mode extends OutputMode = OutputMode> extends ExecaOptions {
+export interface RunOptions<ThrowOnError extends boolean = true, Mode extends OutputMode = OutputMode> extends ShellExecaOptions {
   /** Override the output behavior for this specific command */
   outputMode?: Mode;
   /** Whether to throw error on non-zero exit */
