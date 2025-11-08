@@ -175,6 +175,7 @@ export function createShell<
 
 /**
  * Type-safe Shell class for executing commands with configurable behavior.
+ * Use `createShell()` factory function for better type inference.
  *
  * @template DefaultMode - The default output mode for this instance (defaults to 'capture')
  *
@@ -197,7 +198,19 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
 
   /**
    * Static factory method (alias for createShell).
-   * Provides better type inference than using the constructor directly.
+   * 
+   * Factory function to create a new Shell instance with type inference.
+   * Provides better type safety and convenience compared to using `new Shell()`.
+   *
+   * @template DefaultMode - The default output mode type (inferred from options)
+   * @param options - Configuration options for the Shell instance
+   * @returns A new Shell instance with the specified configuration
+   *
+   * @example
+   * ```typescript
+   * const shell = Shell.create({ defaultOutputMode: 'live', verbose: true });
+   * await shell.run('npm install'); // Output streams to console
+   * ```
    */
   public static create = createShell;
 
