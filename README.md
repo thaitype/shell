@@ -53,10 +53,10 @@ bun add @thaitype/shell
 ## Basic Usage
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
 // Create a shell instance
-const shell = new Shell();
+const shell = createShell();
 
 // Run a command
 const result = await shell.run('echo "Hello World"');
@@ -71,9 +71,9 @@ console.log(result.stdout); // "Hello World"
 Perfect for build scripts and CI/CD pipelines where you want to see what's being executed:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell({
+const shell = createShell({
   verbose: true  // Logs every command before execution
 });
 
@@ -91,9 +91,9 @@ await shell.run('npm run build');
 Test your automation scripts without actually executing commands:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell({
+const shell = createShell({
   dryRun: true,   // Commands are logged but not executed
   verbose: true
 });
@@ -115,9 +115,9 @@ console.log('Dry run complete - no actual changes made!');
 Control how command output is handled:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell();
+const shell = createShell();
 
 // Capture mode (default): Capture output for programmatic use
 const result1 = await shell.run('ls -la', { outputMode: 'capture' });
@@ -138,9 +138,9 @@ console.log('Build output was:', result2.stdout);
 Handle command failures without throwing exceptions using `safeRun()`:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell();
+const shell = createShell();
 
 // safeRun() never throws, returns error result instead
 const result = await shell.safeRun('some-command-that-might-fail');
@@ -159,10 +159,10 @@ if (!result.success) {
 Parse and validate JSON output from commands using Standard Schema:
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 import { z } from 'zod';
 
-const shell = new Shell();
+const shell = createShell();
 
 // Define a schema for package.json
 const packageSchema = z.object({
@@ -200,9 +200,22 @@ if (result.success) {
 
 ## API
 
+### `createShell(options?)` (Recommended)
+
+Factory function to create a new Shell instance with better type inference.
+
+**Recommended:** Use `createShell()` instead of `new Shell()` for better developer experience and automatic type inference of the default output mode.
+
+```typescript
+import { createShell } from '@thaitype/shell';
+
+// Type inference automatically detects 'live' as default mode
+const shell = createShell({ defaultOutputMode: 'live' });
+```
+
 ### `new Shell(options?)`
 
-Creates a new Shell instance with the specified configuration.
+Alternative constructor for creating a Shell instance.
 
 #### Options
 
@@ -326,10 +339,10 @@ Execute a command, parse its stdout as JSON, and validate it against a [Standard
 **Example with Zod:**
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 import { z } from 'zod';
 
-const shell = new Shell();
+const shell = createShell();
 
 const packageSchema = z.object({
   name: z.string(),
@@ -368,10 +381,10 @@ type StandardResult<T> =
 **Example with Zod:**
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 import { z } from 'zod';
 
-const shell = new Shell();
+const shell = createShell();
 
 const userSchema = z.object({
   username: z.string(),
@@ -401,9 +414,9 @@ if (result.success) {
 ### Using run() vs safeRun()
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell();
+const shell = createShell();
 
 // run() - Throws on error (fail fast)
 try {
@@ -425,7 +438,7 @@ if (result.success) {
 ### Custom Logger Integration
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 import winston from 'winston';
 
 const logger = winston.createLogger({
@@ -434,7 +447,7 @@ const logger = winston.createLogger({
   transports: [new winston.transports.Console()]
 });
 
-const shell = new Shell({
+const shell = createShell({
   verbose: true,
   logger: (message) => logger.info(message)
 });
@@ -446,9 +459,9 @@ await shell.run('npm install');
 ### Combining with Execa Options
 
 ```typescript
-import { Shell } from '@thaitype/shell';
+import { createShell } from '@thaitype/shell';
 
-const shell = new Shell();
+const shell = createShell();
 
 // Pass any execa options
 const result = await shell.run('node script.js', {
