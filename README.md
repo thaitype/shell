@@ -134,18 +134,17 @@ console.log('Build output was:', result2.stdout);
 
 ### 4. Graceful Error Handling
 
-Handle command failures without throwing exceptions:
+Handle command failures without throwing exceptions using `safeRun()`:
 
 ```typescript
 import { Shell } from '@thaitype/shell';
 
-const shell = new Shell({
-  throwOnError: false  // Don't throw on non-zero exit codes
-});
+const shell = new Shell();
 
-const result = await shell.run('some-command-that-might-fail');
+// safeRun() never throws, returns error result instead
+const result = await shell.safeRun('some-command-that-might-fail');
 
-if (result.isError) {
+if (!result.success) {
   console.error('Command failed with exit code:', result.exitCode);
   console.error('Error output:', result.stderr);
   // Handle the error gracefully
@@ -173,9 +172,6 @@ interface ShellOptions {
   /** If true, log every executed command */
   verbose?: boolean;
 
-  /** If true, throw an error when a command exits with non-zero code */
-  throwOnError?: boolean; // default: true
-
   /**
    * Controls how errors are thrown when a command fails.
    * - "simple" → Throws a short, human-readable error message
@@ -190,31 +186,42 @@ interface ShellOptions {
 
 ### `shell.run(command, options?)`
 
-Executes a shell command and returns a structured result.
+Executes a shell command that **throws on error**. Recommended for most use cases where you want to fail fast.
 
 #### Parameters
 
 - `command: string | string[]` - The command to execute. Can be a string (with automatic parsing) or an array of arguments.
 - `options?: RunOptions` - Optional execution options.
 
-#### RunOptions
+#### Returns
 
 ```typescript
-interface RunOptions extends ExecaOptions {
-  /** Override the output behavior for this specific command */
-  outputMode?: OutputMode; // 'capture' | 'live' | 'all'
+interface StrictResult {
+  /** Captured stdout output, or null if not captured */
+  stdout: string | null;
 
-  /** Whether to throw error on non-zero exit */
-  throwOnError?: boolean;
+  /** Captured stderr output, or null if not captured */
+  stderr: string | null;
 }
 ```
 
-Inherits all options from [execa's Options](https://github.com/sindresorhus/execa#options).
+**Throws**: Error when command exits with non-zero code (format depends on `throwMode`).
+
+### `shell.safeRun(command, options?)`
+
+Executes a shell command that **never throws**. Returns error result instead.
+
+Use this when you want to handle errors programmatically without try/catch.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `options?: RunOptions` - Optional execution options.
 
 #### Returns
 
 ```typescript
-interface RunResult {
+interface SafeResult {
   /** Captured stdout output, or null if not captured */
   stdout: string | null;
 
@@ -224,13 +231,30 @@ interface RunResult {
   /** Exit code returned by the executed process */
   exitCode: number | undefined;
 
-  /** Indicates whether the command exited with an error */
-  isError: boolean;
-
-  /** Indicates whether the command executed successfully */
-  isSuccess: boolean;
+  /** True if command exited with code 0 */
+  success: boolean;
 }
 ```
+
+### `shell.execute(command, options?)`
+
+Low-level method with explicit `throwOnError` control.
+
+#### Parameters
+
+- `command: string | string[]` - The command to execute.
+- `options?: RunOptions & { throwOnError?: boolean }` - Optional execution options including throwOnError flag.
+
+#### RunOptions
+
+```typescript
+interface RunOptions extends ExecaOptions {
+  /** Override the output behavior for this specific command */
+  outputMode?: OutputMode; // 'capture' | 'live' | 'all'
+}
+```
+
+Inherits all options from [execa's Options](https://github.com/sindresorhus/execa#options).
 
 ### Output Modes
 
@@ -239,6 +263,30 @@ interface RunResult {
 - **`all`**: Both captures AND streams output simultaneously.
 
 ## Advanced Examples
+
+### Using run() vs safeRun()
+
+```typescript
+import { Shell } from '@thaitype/shell';
+
+const shell = new Shell();
+
+// run() - Throws on error (fail fast)
+try {
+  const result = await shell.run('npm test');
+  console.log('Tests passed!', result.stdout);
+} catch (error) {
+  console.error('Tests failed:', error.message);
+}
+
+// safeRun() - Never throws, check success flag
+const result = await shell.safeRun('npm test');
+if (result.success) {
+  console.log('Tests passed!', result.stdout);
+} else {
+  console.error('Tests failed with exit code:', result.exitCode);
+}
+```
 
 ### Custom Logger Integration
 
