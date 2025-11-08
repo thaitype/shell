@@ -21,11 +21,35 @@ type CaptureForMode<M extends OutputMode> = M extends 'live' ? false : true;
 
 /**
  * Default options that can be overridden per command execution.
+ *
+ * These options can be set at the Shell instance level and overridden per command.
+ * When both shell-level and command-level options are provided, they are deep merged,
+ * with command-level options taking precedence.
  */
 export interface OverridableCommandOptions<Mode extends OutputMode> {
   /**
    * Default execa options applied to all command executions.
-   * Can be overridden by individual run options.
+   *
+   * When command-level execaOptions are provided, they are deep merged with
+   * shell-level options using the `deepmerge` library. Command-level options
+   * override shell-level options.
+   *
+   * @example
+   * ```typescript
+   * // Shell-level defaults
+   * const shell = createShell({
+   *   execaOptions: {
+   *     env: { API_KEY: 'default' },
+   *     timeout: 5000
+   *   }
+   * });
+   *
+   * // Command-level override (deep merged)
+   * await shell.run('command', {
+   *   env: { EXTRA: 'value' },  // Both API_KEY and EXTRA available
+   *   timeout: 10000             // Overrides shell-level timeout
+   * });
+   * ```
    */
   execaOptions?: ShellExecaOptions;
   /**
@@ -94,8 +118,31 @@ export interface ShellOptions<Mode extends OutputMode = 'capture'> extends Overr
   throwMode?: 'simple' | 'raw';
 
   /**
-   * Optional custom logger function for command output.
-   * If not provided, defaults to `console.log`.
+   * Optional custom logger for command output and diagnostics.
+   *
+   * Provides two logging methods:
+   * - `debug(message, context)` - Called for verbose command logging (defaults to console.debug)
+   * - `warn(message, context)` - Called for warnings (defaults to console.warn)
+   *
+   * The context parameter includes the command and final execa options.
+   *
+   * @example
+   * ```typescript
+   * const shell = createShell({
+   *   verbose: true,
+   *   logger: {
+   *     debug: (message, context) => {
+   *       console.log(`[DEBUG] ${message}`);
+   *       console.log('Command:', context.command);
+   *     },
+   *     warn: (message, context) => {
+   *       console.warn(`[WARN] ${message}`, context);
+   *     }
+   *   }
+   * });
+   * ```
+   *
+   * @default { debug: console.debug, warn: console.warn }
    */
   logger?: ShellLogger;
 }
@@ -113,9 +160,27 @@ export type ShellExecaOptions = Omit<ExecaOptions, 'reject' | 'verbose' | 'stdou
 
 /**
  * Options for an individual command execution.
- * Extends overridable command options and execa options.
+ *
+ * Extends overridable command options (outputMode, verbose, dryRun) and execa options.
+ * All execa options provided here will be deep merged with shell-level execaOptions,
+ * with command-level options taking precedence.
  *
  * @template Mode - The output mode type for this specific command
+ *
+ * @example
+ * ```typescript
+ * const shell = createShell({
+ *   execaOptions: { env: { API_KEY: 'default' } }
+ * });
+ *
+ * // Command-level options are deep merged with shell-level
+ * await shell.run('command', {
+ *   outputMode: 'live',      // Override output mode
+ *   verbose: true,           // Override verbose
+ *   env: { EXTRA: 'value' }, // Merged with shell-level env
+ *   timeout: 5000            // Added to shell-level options
+ * });
+ * ```
  */
 export interface RunOptions<Mode extends OutputMode = OutputMode>
   extends Omit<OverridableCommandOptions<Mode>, 'execaOptions'>,
@@ -165,13 +230,39 @@ export type RunResult<Throw extends boolean, Mode extends OutputMode> = Throw ex
  * @param options - Configuration options for the Shell instance
  * @returns A new Shell instance with the specified configuration
  *
- * @example
+ * @example Basic usage
  * ```typescript
  * const shell = createShell({
  *   outputMode: 'live',
  *   verbose: true
  * });
  * await shell.run('npm install'); // Output streams to console
+ * ```
+ *
+ * @example With default execaOptions and custom logger
+ * ```typescript
+ * const shell = createShell({
+ *   execaOptions: {
+ *     env: { NODE_ENV: 'production', API_URL: 'https://api.example.com' },
+ *     timeout: 30000
+ *   },
+ *   verbose: true,
+ *   logger: {
+ *     debug: (message, context) => {
+ *       console.log(`[${new Date().toISOString()}] ${message}`);
+ *       console.log('Execa options:', context.execaOptions);
+ *     }
+ *   }
+ * });
+ *
+ * // All commands inherit shell-level execaOptions
+ * await shell.run('npm install');
+ *
+ * // Command-level options are deep merged with shell-level
+ * await shell.run('npm test', {
+ *   env: { TEST_ENV: 'true' }, // Merged with shell-level env
+ *   timeout: 120000             // Overrides shell-level timeout
+ * });
  * ```
  */
 export function createShell<DefaultMode extends OutputMode = OutputMode>(options: ShellOptions<DefaultMode> = {}) {
@@ -233,12 +324,27 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    *
    * @param options - Configuration options for default behavior
    *
-   * @example
+   * @example Basic usage
    * ```typescript
    * const shell = new Shell({
    *   outputMode: 'capture',
    *   verbose: true,
    *   throwMode: 'simple'
+   * });
+   * ```
+   *
+   * @example With default execaOptions
+   * ```typescript
+   * const shell = new Shell({
+   *   execaOptions: {
+   *     env: { NODE_ENV: 'production' },
+   *     timeout: 30000,
+   *     cwd: '/app'
+   *   },
+   *   logger: {
+   *     debug: (msg, ctx) => console.log(`[DEBUG] ${msg}`, ctx),
+   *     warn: (msg, ctx) => console.warn(`[WARN] ${msg}`, ctx)
+   *   }
    * });
    * ```
    */
@@ -260,25 +366,44 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * Use `run()` for commands that should throw on error, or `safeRun()` for commands
    * that should return an error result instead.
    *
+   * This method deep merges command-level options with shell-level `execaOptions`,
+   * allowing fine-grained control over command execution while maintaining defaults.
+   *
    * @template Throw - Whether to throw on error (true) or return error result (false)
    * @template Mode - The output mode for this command
    *
    * @param cmd - Command to execute, as string or array of arguments
-   * @param options - Optional overrides including throwOnError flag
+   * @param options - Optional overrides including throwOnError flag and any execa options.
+   *                  Execa options are deep merged with shell-level execaOptions.
    *
    * @returns A result object with type-safe stdout/stderr based on output mode and throw mode
    *
-   * @example
+   * @example Throws on error
    * ```typescript
-   * // Throws on error
    * const result = await shell.execute('echo test', { throwOnError: true });
    * console.log(result.stdout); // No need to check success
+   * ```
    *
-   * // Returns error result
+   * @example Returns error result
+   * ```typescript
    * const result = await shell.execute('might-fail', { throwOnError: false });
    * if (result.success) {
    *   console.log(result.stdout);
    * }
+   * ```
+   *
+   * @example With deep merged options
+   * ```typescript
+   * const shell = createShell({
+   *   execaOptions: { env: { API_KEY: 'default' }, timeout: 5000 }
+   * });
+   *
+   * // Command-level env is merged, timeout is overridden
+   * await shell.execute('command', {
+   *   throwOnError: true,
+   *   env: { EXTRA: 'value' }, // Merged: both API_KEY and EXTRA available
+   *   timeout: 10000            // Overrides: 10000 instead of 5000
+   * });
    * ```
    */
   public async execute<Throw extends boolean = true, Mode extends OutputMode = DefaultMode>(
