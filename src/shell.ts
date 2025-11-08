@@ -14,7 +14,7 @@ import parseArgsStringToArgv from 'string-argv';
 export type OutputMode = 'capture' | 'live' | 'all';
 
 /** Configuration options for Shell instance */
-export interface ShellOptions {
+export interface ShellOptions<ThrowOnError extends boolean = true> {
   /** Default output mode applied to all runs unless overridden */
   defaultOutputMode?: OutputMode;
   /** If true, print commands but skip actual execution */
@@ -22,7 +22,7 @@ export interface ShellOptions {
   /** If true, log every executed command */
   verbose?: boolean;
   /** If true, throw an error when a command exits with non-zero code, @default true */
-  throwOnError?: boolean;
+  throwOnError?: ThrowOnError;
   /**
    * Controls how errors are thrown when a command fails.
    * - `"simple"` → Throws a short, human-readable error message.
@@ -36,19 +36,22 @@ export interface ShellOptions {
 }
 
 /** Options for an individual command execution */
-export interface RunOptions extends ExecaOptions {
+export interface RunOptions<ThrowOnError extends boolean = true> extends ExecaOptions {
   /** Override the output behavior for this specific command */
   outputMode?: OutputMode;
   /** Whether to throw error on non-zero exit */
-  throwOnError?: boolean;
+  throwOnError?: ThrowOnError;
 }
 
 /** The structured result returned by Shell.run() */
-export interface RunResult {
+export interface StrictResult {
   /** Captured stdout output, or null if not captured */
   stdout: string | null;
   /** Captured stderr output, or null if not captured */
   stderr: string | null;
+}
+
+export interface SafeResult extends StrictResult {
   /** Exit code returned by the executed process */
   exitCode: number | undefined;
   /** Indicates whether the command exited with an error */
@@ -57,7 +60,9 @@ export interface RunResult {
   isSuccess: boolean;
 }
 
-export class Shell {
+export type RunResult<Throw extends boolean> = Throw extends true ? StrictResult : SafeResult;
+
+export class Shell<DefaultThrow extends boolean = true> {
   private defaultOutputMode: OutputMode;
   private dryRun: boolean;
   private verbose: boolean;
@@ -69,7 +74,7 @@ export class Shell {
    * Create a new Shell instance.
    * @param options - Configuration options for default behavior.
    */
-  constructor(options: ShellOptions = {}) {
+  constructor(options: ShellOptions<DefaultThrow> = {}) {
     this.defaultOutputMode = options.defaultOutputMode ?? 'capture';
     this.dryRun = options.dryRun ?? false;
     this.verbose = options.verbose ?? false;
@@ -86,7 +91,7 @@ export class Shell {
    * @param options - Optional overrides for this execution.
    * @returns A structured {@link RunResult} containing outputs and exit info.
    */
-  async run(cmd: string | string[], options?: RunOptions): Promise<RunResult> {
+  async run<Throw extends boolean = DefaultThrow>(cmd: string | string[], options?: RunOptions<Throw>): Promise<RunResult<Throw>> {
     const args = Array.isArray(cmd) ? cmd : parseArgsStringToArgv(cmd);
 
     const [program, ...cmdArgs] = args;
@@ -107,7 +112,7 @@ export class Shell {
     }
 
     if (this.dryRun) {
-      return { stdout: '', stderr: '', exitCode: 0, isError: false, isSuccess: true };
+      return { stdout: '', stderr: '', exitCode: 0, isError: false, isSuccess: true } as RunResult<Throw>;
     }
 
     try {
@@ -123,7 +128,7 @@ export class Shell {
         exitCode: result.exitCode,
         isError: result.exitCode !== 0,
         isSuccess: result.exitCode === 0,
-      };
+      } as RunResult<Throw>;
     } catch (error: unknown) {
       if (error instanceof ExecaError) {
         if (this.throwOnError || options?.throwOnError) {
@@ -142,7 +147,7 @@ export class Shell {
         exitCode: undefined,
         isError: true,
         isSuccess: false,
-      };
+      } as RunResult<Throw>;
     }
   }
 }
