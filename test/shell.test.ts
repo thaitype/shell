@@ -1343,4 +1343,192 @@ describe('Shell', () => {
       expect(mockDebug).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('Fluent Shell API - safeParse() Non-throwable', () => {
+    it('should return success result for valid JSON and schema', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({
+        name: z.string(),
+        version: z.string(),
+      });
+
+      const result = await $`echo '{"name":"test","version":"1.0.0"}'`.safeParse(schema);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.name).toBe('test');
+        expect(result.data.version).toBe('1.0.0');
+      }
+    });
+
+    it('should return error when command fails', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const result = await $`sh -c "exit 1"`.safeParse(schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('Command failed');
+        expect(result.error[0].message).toContain('Exit code: 1');
+      }
+    });
+
+    it('should return error when no output', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const result = await $`true`.safeParse(schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('produced no output');
+      }
+    });
+
+    it('should return error when JSON is invalid', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const result = await $`echo "not valid json"`.safeParse(schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error[0].message).toContain('Unable to parse JSON');
+      }
+    });
+
+    it('should return error when schema validation fails', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({
+        name: z.string(),
+        count: z.number(),
+      });
+
+      const result = await $`echo '{"name":"test","count":"not-a-number"}'`.safeParse(schema);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('should work with function call syntax', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const result = await $('echo \'{"value":"hello"}\'').safeParse(schema);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.value).toBe('hello');
+      }
+    });
+
+    it('should work with array command syntax', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const result = await $(['echo', '{"value":"world"}']).safeParse(schema);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.value).toBe('world');
+      }
+    });
+
+    it('should work with nested objects', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({
+        user: z.object({
+          name: z.string(),
+          email: z.string(),
+        }),
+      });
+
+      const result = await $`echo '{"user":{"name":"Alice","email":"alice@example.com"}}'`.safeParse(schema);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.user.name).toBe('Alice');
+        expect(result.data.user.email).toBe('alice@example.com');
+      }
+    });
+
+    it('should work with arrays', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({
+        items: z.array(z.string()),
+      });
+
+      const result = await $`echo '{"items":["a","b","c"]}'`.safeParse(schema);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.items).toEqual(['a', 'b', 'c']);
+      }
+    });
+
+    it('should never throw on any error', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({ value: z.string() });
+
+      // Command failure - should not throw
+      const result1 = await $`sh -c "exit 1"`.safeParse(schema);
+      expect(result1.success).toBe(false);
+
+      // Invalid JSON - should not throw
+      const result2 = await $`echo "{{{"`.safeParse(schema);
+      expect(result2.success).toBe(false);
+
+      // Schema validation failure - should not throw
+      const result3 = await $`echo '{"value":123}'`.safeParse(schema);
+      expect(result3.success).toBe(false);
+
+      // All should have returned without throwing
+      expect(true).toBe(true);
+    });
+
+    it('should be memoized with other methods', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const handle = $`echo '{"value":"test"}'`;
+
+      // First call with safeParse
+      const result1 = await handle.safeParse(schema);
+      expect(result1.success).toBe(true);
+
+      // Second call with parse (should reuse execution)
+      const result2 = await handle.parse(schema);
+      expect(result2.value).toBe('test');
+
+      // Third call with result (should still reuse)
+      const result3 = await handle.result();
+      expect(result3.success).toBe(true);
+
+      // Should only execute once
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should work with Zod transformations', async () => {
+      const $ = createShell().asFluent();
+      const schema = z
+        .object({
+          name: z.string(),
+        })
+        .transform(data => ({
+          ...data,
+          uppercase: data.name.toUpperCase(),
+        }));
+
+      const result = await $`echo '{"name":"hello"}'`.safeParse(schema);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.uppercase).toBe('HELLO');
+      }
+    });
+  });
 });

@@ -99,7 +99,47 @@ async function main() {
   const pkg = await $`cat package.json`.parse(PackageSchema);
   console.log(`Package: ${pkg.name} v${pkg.version}\n`);
 
-  console.log('--- Example 11: Error Handling Comparison ---');
+  console.log('--- Example 11: safeParse() - Non-throwable Parsing ---');
+  // safeParse() never throws, returns StandardResult instead
+  const ConfigSchema = z.object({
+    name: z.string(),
+    version: z.string(),
+  });
+
+  // Success case
+  const parseResult1 = await $`echo '{"name":"app","version":"1.0.0"}'`.safeParse(ConfigSchema);
+  if (parseResult1.success) {
+    console.log(`✅ Parse success: ${parseResult1.data.name} v${parseResult1.data.version}`);
+  } else {
+    console.log(`❌ Parse failed: ${parseResult1.error[0].message}`);
+  }
+
+  // Command failure case (doesn't throw!)
+  const parseResult2 = await $`sh -c "exit 1"`.safeParse(ConfigSchema);
+  if (parseResult2.success) {
+    console.log(`✅ Parse success: ${parseResult2.data}`);
+  } else {
+    console.log(`❌ Command failed (non-throwing): ${parseResult2.error[0].message.split('\n')[0]}`);
+  }
+
+  // Invalid JSON case (doesn't throw!)
+  const parseResult3 = await $`echo "not json"`.safeParse(ConfigSchema);
+  if (parseResult3.success) {
+    console.log(`✅ Parse success: ${parseResult3.data}`);
+  } else {
+    console.log(`❌ JSON invalid (non-throwing): ${parseResult3.error[0].message.split('\n')[0]}`);
+  }
+
+  // Schema validation failure (doesn't throw!)
+  const parseResult4 = await $`echo '{"name":"app"}'`.safeParse(ConfigSchema); // missing 'version'
+  if (parseResult4.success) {
+    console.log(`✅ Parse success: ${parseResult4.data}`);
+  } else {
+    console.log(`❌ Validation failed (non-throwing): Schema validation error`);
+  }
+  console.log();
+
+  console.log('--- Example 12: Error Handling Comparison ---');
   // Throwable vs non-throwable
   try {
     console.log('Attempting throwable execution...');
@@ -111,7 +151,7 @@ async function main() {
   const safeResult = await $`sh -c "exit 1"`.result();
   console.log(`Non-throwable result: success=${safeResult.success}, exitCode=${safeResult.exitCode}\n`);
 
-  console.log('--- Example 12: Chaining with Variables ---');
+  console.log('--- Example 13: Chaining with Variables ---');
   // Use result of one command in another
   const dir = await $`echo test-dir`;
   console.log(`Got directory name: ${dir}`);
@@ -120,7 +160,7 @@ async function main() {
   await $dryRun`mkdir ${dir}`;
   console.log(`Would create directory: ${dir} (dry run)\n`);
 
-  console.log('--- Example 13: Complex Template ---');
+  console.log('--- Example 14: Complex Template ---');
   // More complex template with multiple parts
   const user = 'alice';
   const age = 30;

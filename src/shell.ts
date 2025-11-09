@@ -364,6 +364,33 @@ export type LazyCommandHandle = PromiseLike<string> & {
    * @returns Promise resolving to the parsed and validated data
    */
   parse<T extends StandardSchemaV1>(schema: T): Promise<StandardSchemaV1.InferOutput<T>>;
+
+  /**
+   * Parse stdout as JSON and validate with schema (non-throwable).
+   * Returns StandardResult instead of throwing on failure.
+   *
+   * This method never throws, even if:
+   * - The command fails
+   * - There's no stdout
+   * - JSON parsing fails
+   * - Schema validation fails
+   *
+   * @template T - A Standard Schema V1 schema type
+   * @param schema - A Standard Schema V1 compatible schema
+   * @returns Promise resolving to StandardResult with either data or error
+   *
+   * @example
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const result = await $`cat config.json`.safeParse(ConfigSchema);
+   * if (result.success) {
+   *   console.log('Config:', result.data);
+   * } else {
+   *   console.error('Validation failed:', result.error);
+   * }
+   * ```
+   */
+  safeParse<T extends StandardSchemaV1>(schema: T): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>>;
 };
 
 /**
@@ -887,6 +914,57 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
           throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
         }
         return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
+      });
+    };
+
+    // Helper method: parse JSON and validate with schema (non-throwable)
+    // Returns StandardResult instead of throwing
+    handle.safeParse = <T extends StandardSchemaV1>(
+      schema: T
+    ): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>> => {
+      return start().then(result => {
+        const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+        const commandStr = args.join(' ');
+
+        // Check if command failed
+        if (!result.success) {
+          return {
+            success: false,
+            error: [
+              {
+                message: `Command failed: ${commandStr}\nExit code: ${result.exitCode}\n${result.stderr}`,
+              },
+            ],
+          };
+        }
+
+        // Check if there's no output
+        if (!result.stdout) {
+          return {
+            success: false,
+            error: [
+              {
+                message: `The command produced no output to validate: ${commandStr}`,
+              },
+            ],
+          };
+        }
+
+        // Try to parse JSON
+        try {
+          const parsed = JSON.parse(result.stdout);
+          // Use standardSafeValidate for schema validation (non-throwing)
+          return standardSafeValidate(schema, parsed);
+        } catch (e: unknown) {
+          return {
+            success: false,
+            error: [
+              {
+                message: `Unable to parse JSON: ${e instanceof Error ? e.message : String(e)}\nCommand: ${commandStr}`,
+              },
+            ],
+          };
+        }
       });
     };
 
