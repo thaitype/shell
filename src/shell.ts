@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { execa, type Options as ExecaOptions, ExecaError } from 'execa';
 import parseArgsStringToArgv from 'string-argv';
 import deepmerge from 'deepmerge';
-import { standardSafeValidate, standardValidate, type StandardResult } from './standard-schema.js';
+import { standardSafeValidate, standardValidate, type ValidationResult } from './standard-schema.js';
 
 /**
  * Output mode behavior for handling stdout/stderr.
@@ -343,7 +343,7 @@ export type LazyCommandHandle = PromiseLike<string> & {
 
   /**
    * Parse stdout as JSON and validate with schema (non-throwable).
-   * Returns StandardResult instead of throwing on failure.
+   * Returns ValidationResult instead of throwing on failure.
    *
    * This method never throws, even if:
    * - The command fails
@@ -353,7 +353,7 @@ export type LazyCommandHandle = PromiseLike<string> & {
    *
    * @template T - A Standard Schema V1 schema type
    * @param schema - A Standard Schema V1 compatible schema
-   * @returns Promise resolving to StandardResult with either data or error
+   * @returns Promise resolving to ValidationResult with either data or error
    *
    * @example
    * ```typescript
@@ -366,7 +366,7 @@ export type LazyCommandHandle = PromiseLike<string> & {
    * }
    * ```
    */
-  safeParse<T extends StandardSchemaV1>(schema: T): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>>;
+  safeParse<T extends StandardSchemaV1>(schema: T): Promise<ValidationResult<StandardSchemaV1.InferOutput<T>>>;
 };
 
 /**
@@ -766,7 +766,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     cmd: string | string[],
     schema: T,
     options?: RunOptions<Mode>
-  ): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>> {
+  ): Promise<ValidationResult<StandardSchemaV1.InferOutput<T>>> {
     const result = await this.safeRun<Mode>(cmd, options);
     const verbose = options?.verbose ?? this.verbose;
     const fullCommand = Array.isArray(cmd) ? cmd.join(' ') : cmd;
@@ -894,10 +894,10 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     };
 
     // Helper method: parse JSON and validate with schema (non-throwable)
-    // Returns StandardResult instead of throwing
+    // Returns ValidationResult instead of throwing
     handle.safeParse = <T extends StandardSchemaV1>(
       schema: T
-    ): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>> => {
+    ): Promise<ValidationResult<StandardSchemaV1.InferOutput<T>>> => {
       return start().then(result => {
         const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
         const commandStr = args.join(' ');

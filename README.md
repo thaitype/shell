@@ -412,7 +412,7 @@ Execute a command, parse its stdout as JSON, and validate it against a Standard 
 #### Returns
 
 ```typescript
-type StandardResult<T> =
+type ValidationResult<T> =
   | { success: true; data: T }
   | { success: false; error: Array<{ message: string }> };
 ```

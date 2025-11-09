@@ -100,7 +100,7 @@ async function main() {
   console.log(`Package: ${pkg.name} v${pkg.version}\n`);
 
   console.log('--- Example 11: safeParse() - Non-throwable Parsing ---');
-  // safeParse() never throws, returns StandardResult instead
+  // safeParse() never throws, returns ValidationResult instead
   const ConfigSchema = z.object({
     name: z.string(),
     version: z.string(),
