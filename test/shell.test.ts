@@ -975,14 +975,11 @@ describe('Shell', () => {
       }
     });
 
-    it('should always use capture mode', async () => {
-      // Even with live mode as default, fluent shell should capture
-      const $ = createShell({ outputMode: 'live' }).asFluent();
-
-      const result = await $('echo captured');
-
-      // Should still capture output despite shell default being live
-      expect(result).toBe('captured');
+    it('should reject live mode at shell level', () => {
+      // Fluent shell should throw when shell has live mode
+      expect(() => createShell({ outputMode: 'live' }).asFluent()).toThrow(
+        "FluentShell does not support outputMode: 'live'"
+      );
     });
   });
 
@@ -1529,6 +1526,167 @@ describe('Shell', () => {
       if (result.success) {
         expect(result.data.uppercase).toBe('HELLO');
       }
+    });
+  });
+
+  describe('Fluent Shell API - OutputMode Support', () => {
+    it('should work with capture mode (default)', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const $ = shell.asFluent();
+
+      const result = await $`echo hello`;
+
+      expect(result).toBe('hello');
+    });
+
+    it('should work with all mode from shell options', async () => {
+      const shell = createShell({ outputMode: 'all' });
+      const $ = shell.asFluent();
+
+      const result = await $(['echo', 'world']).result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('world');
+    });
+
+    it('should throw when shell has live mode', () => {
+      const shell = createShell({ outputMode: 'live' });
+
+      expect(() => shell.asFluent()).toThrow(
+        "FluentShell does not support outputMode: 'live'. Use 'capture' or 'all', or call shell.run(..., { outputMode: 'live' }) instead."
+      );
+    });
+
+    it('should throw when overriding to live mode', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const $ = shell.asFluent();
+
+      await expect(async () => {
+        await $(['echo', 'x'], { outputMode: 'live' as any });
+      }).rejects.toThrow("FluentShell does not support outputMode: 'live'");
+    });
+
+    it('should allow overriding to all mode', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const $ = shell.asFluent();
+
+      const result = await $(['echo', 'test'], { outputMode: 'all' }).result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('test');
+    });
+
+    it('should inherit outputMode from ShellOptions', async () => {
+      const shell = createShell({ outputMode: 'all' });
+      const $ = shell.asFluent();
+
+      const result = await $('echo inherited').result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('inherited');
+    });
+
+    it('should support toLines() in all mode', async () => {
+      const shell = createShell({ outputMode: 'all' });
+      const $ = shell.asFluent();
+
+      const lines = await $`printf "line1\\nline2"`.toLines();
+
+      expect(lines).toEqual(['line1', 'line2']);
+    });
+
+    it('should support parse() in all mode', async () => {
+      const shell = createShell({ outputMode: 'all' });
+      const $ = shell.asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const data = await $`echo '{"value":"test"}'`.parse(schema);
+
+      expect(data.value).toBe('test');
+    });
+
+    it('should memoize execution with options', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const $ = shell.asFluent();
+      const handle = $(['echo', 'memo'], { outputMode: 'all' });
+
+      const result1 = await handle.result();
+      const result2 = await handle.result();
+
+      expect(result1.stdout).toBe('memo');
+      expect(result2.stdout).toBe('memo');
+      // Results should be the same object (memoized)
+      expect(result1).toBe(result2);
+    });
+
+    it('should provide clear error message for live mode at shell level', () => {
+      const shell = createShell({ outputMode: 'live' });
+
+      expect(() => shell.asFluent()).toThrow(
+        "FluentShell does not support outputMode: 'live'. Use 'capture' or 'all', or call shell.run(..., { outputMode: 'live' }) instead."
+      );
+    });
+
+    it('should allow capture mode override on shell with all mode', async () => {
+      const shell = createShell({ outputMode: 'all' });
+      const $ = shell.asFluent();
+
+      const result = await $(['echo', 'override'], { outputMode: 'capture' }).result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('override');
+    });
+
+    it('should work with tagged templates in all mode', async () => {
+      const shell = createShell({ outputMode: 'all' });
+      const $ = shell.asFluent();
+      const name = 'world';
+
+      const result = await $`echo hello ${name}`;
+
+      expect(result).toBe('hello world');
+    });
+
+    it('should handle options merging with outputMode override', async () => {
+      const shell = createShell({ outputMode: 'capture', verbose: true });
+      const $ = shell.asFluent();
+
+      const result = await $(['echo', 'test'], { outputMode: 'all', dryRun: true }).result();
+
+      // In dry run mode, should return success without executing
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('');
+    });
+
+    it('should support safeParse() in all mode', async () => {
+      const shell = createShell({ outputMode: 'all' });
+      const $ = shell.asFluent();
+      const schema = z.object({ key: z.string() });
+
+      const result = await $`echo '{"key":"value"}'`.safeParse(schema);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.key).toBe('value');
+      }
+    });
+
+    it('should work with function call without options', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const $ = shell.asFluent();
+
+      const result = await $('echo no-options');
+
+      expect(result).toBe('no-options');
+    });
+
+    it('should work with array call without options', async () => {
+      const shell = createShell({ outputMode: 'capture' });
+      const $ = shell.asFluent();
+
+      const result = await $(['echo', 'array-no-options']);
+
+      expect(result).toBe('array-no-options');
     });
   });
 });

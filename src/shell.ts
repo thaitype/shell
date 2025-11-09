@@ -14,6 +14,12 @@ import { standardSafeValidate, standardValidate, type ValidationResult } from '.
 export type OutputMode = 'capture' | 'live' | 'all';
 
 /**
+ * Output modes supported by FluentShell.
+ * Excludes 'live' mode since fluent operations require stdout for chaining and parsing.
+ */
+export type FluentOutputMode = Exclude<OutputMode, 'live'>;
+
+/**
  * Type utility to determine if an output mode captures output.
  * Returns false for 'live' mode, true for 'capture' and 'all'.
  */
@@ -187,6 +193,19 @@ export interface RunOptions<Mode extends OutputMode = OutputMode>
     ShellExecaOptions {}
 
 /**
+ * Options for fluent shell command execution.
+ * Restricts outputMode to exclude 'live' mode.
+ *
+ * @template Mode - The output mode for this command (capture or all only)
+ */
+export type FluentRunOptions<Mode extends FluentOutputMode = FluentOutputMode> = Omit<
+  RunOptions<Mode>,
+  'outputMode'
+> & {
+  outputMode?: Mode;
+};
+
+/**
  * Strict result returned by `run()` method (throws on error).
  * Only includes stdout/stderr, as the command either succeeds or throws.
  *
@@ -319,7 +338,7 @@ export type LazyCommandHandle = PromiseLike<string> & {
    *
    * @returns Promise resolving to ExecutionResult with success, stdout, stderr, and exitCode
    */
-  result(): Promise<ExecutionResult<false, 'capture'>>;
+  result(): Promise<ExecutionResult<false, FluentOutputMode>>;
 
   /**
    * Split stdout by newlines and return as array of strings.
@@ -375,8 +394,10 @@ export type LazyCommandHandle = PromiseLike<string> & {
  *
  * Supports three call signatures:
  * 1. Tagged template: `` $`echo hello` ``
- * 2. String command: `$('echo hello')`
- * 3. Argv array: `$(['echo', 'hello'])`
+ * 2. String command: `$('echo hello')` or `$('echo hello', { outputMode: 'all' })`
+ * 3. Argv array: `$(['echo', 'hello'])` or `$(['echo', 'hello'], { outputMode: 'all' })`
+ *
+ * Note: FluentShell does not support 'live' mode. Use 'capture' or 'all' only.
  *
  * @example Tagged template with interpolation
  * ```typescript
@@ -385,16 +406,16 @@ export type LazyCommandHandle = PromiseLike<string> & {
  * const result = await $`echo hello ${name}`;
  * ```
  *
- * @example Function call with string
+ * @example Function call with options
  * ```typescript
  * const $ = createShell().asFluent();
- * const result = await $('echo hello');
+ * const result = await $('echo hello', { outputMode: 'all' });
  * ```
  *
- * @example Function call with array
+ * @example Array call with options
  * ```typescript
  * const $ = createShell().asFluent();
- * const result = await $(['echo', 'hello']);
+ * const result = await $(['echo', 'hello'], { outputMode: 'all' });
  * ```
  */
 export interface DollarFunction {
@@ -404,14 +425,9 @@ export interface DollarFunction {
   (parts: TemplateStringsArray, ...values: any[]): LazyCommandHandle;
 
   /**
-   * String command call
+   * String or array command call with optional fluent options
    */
-  (command: string): LazyCommandHandle;
-
-  /**
-   * Argv array call
-   */
-  (command: string[]): LazyCommandHandle;
+  (command: string | string[], options?: FluentRunOptions): LazyCommandHandle;
 }
 
 /**
@@ -816,23 +832,45 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   }
 
   /**
+   * Validates that the output mode is compatible with FluentShell.
+   * Throws an error if 'live' mode is used.
+   *
+   * @param mode - The output mode to validate
+   * @throws {Error} If mode is 'live'
+   *
+   * @internal
+   */
+  private assertFluentMode(mode: OutputMode): asserts mode is FluentOutputMode {
+    if (mode === 'live') {
+      throw new Error(
+        "FluentShell does not support outputMode: 'live'. " +
+          "Use 'capture' or 'all', or call shell.run(..., { outputMode: 'live' }) instead."
+      );
+    }
+  }
+
+  /**
    * Create a lazy command handle with memoized execution.
    * The command doesn't execute until first consumption (await, .result(), .toLines(), .parse()).
    * Multiple consumptions share the same execution result.
    *
    * @param command - Command to execute (string or array)
+   * @param options - Fluent execution options (validated to not use 'live' mode)
    * @returns LazyCommandHandle with deferred execution
    *
    * @internal
    */
-  private createLazyHandle(command: string | string[]): LazyCommandHandle {
+  private createLazyHandle(
+    command: string | string[],
+    options: FluentRunOptions<FluentOutputMode>
+  ): LazyCommandHandle {
     // Memoized execution promise - null until first consumption
-    let executionPromise: Promise<ExecutionResult<false, 'capture'>> | null = null;
+    let executionPromise: Promise<ExecutionResult<false, FluentOutputMode>> | null = null;
 
     // Lazy executor - runs command once and memoizes result
-    const start = (): Promise<ExecutionResult<false, 'capture'>> => {
+    const start = (): Promise<ExecutionResult<false, FluentOutputMode>> => {
       if (executionPromise === null) {
-        executionPromise = this.safeRun(command, { outputMode: 'capture' }).then(result => ({
+        executionPromise = this.safeRun(command, options as RunOptions<FluentOutputMode>).then(result => ({
           success: result.success,
           stdout: result.stdout ?? '',
           stderr: result.stderr ?? '',
@@ -952,24 +990,36 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    *
    * Returns a function that supports:
    * - Tagged templates: `` $`echo hello` ``
-   * - Function calls: `$('echo hello')` or `$(['echo', 'hello'])`
+   * - Function calls: `$('echo hello')` or `$(['echo', 'hello'], { outputMode: 'all' })`
    * - Lazy execution: command doesn't run until consumed
    * - Memoization: multiple consumptions share one execution
    * - Non-throwable path: `.result()` returns result with success flag
    *
+   * Note: FluentShell requires stdout for chaining, so 'live' mode is not supported.
+   * If the shell instance has `outputMode: 'live'`, this method will throw an error.
+   *
    * @returns DollarFunction that supports tagged templates and function calls
    *
-   * @example Tagged template
+   * @throws {Error} If shell instance has `outputMode: 'live'`
+   *
+   * @example Tagged template with shell default mode
    * ```typescript
-   * const $ = createShell().asFluent();
-   * const name = 'world';
-   * const result = await $`echo hello ${name}`; // 'hello world'
+   * const shell = createShell({ outputMode: 'capture' });
+   * const $ = shell.asFluent();
+   * const result = await $`echo hello`; // Uses 'capture' mode
    * ```
    *
-   * @example Function call
+   * @example Function call with mode override
    * ```typescript
-   * const $ = createShell().asFluent();
-   * const result = await $('echo hello'); // 'hello'
+   * const shell = createShell({ outputMode: 'capture' });
+   * const $ = shell.asFluent();
+   * const result = await $('echo hello', { outputMode: 'all' }); // Uses 'all' mode
+   * ```
+   *
+   * @example Error case - live mode not supported
+   * ```typescript
+   * const shell = createShell({ outputMode: 'live' });
+   * shell.asFluent(); // ❌ Throws error
    * ```
    *
    * @example Non-throwable execution
@@ -998,17 +1048,40 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * ```
    */
   public asFluent(): DollarFunction {
+    // Validate shell-level outputMode
+    this.assertFluentMode(this.outputMode);
+
     return ((firstArg: any, ...rest: any[]): LazyCommandHandle => {
       // Detect if it's a tagged template call
       // Tagged templates pass TemplateStringsArray as first argument
       if (Array.isArray(firstArg) && 'raw' in firstArg && Array.isArray((firstArg as any).raw)) {
-        // Tagged template: process interpolation
+        // Tagged template: process interpolation, use shell default mode
         const command = this.processTaggedTemplate(firstArg as TemplateStringsArray, rest);
-        return this.createLazyHandle(command);
+        const mode = this.outputMode;
+
+        // Mode already validated at asFluent() level, but assert for type narrowing
+        this.assertFluentMode(mode);
+
+        return this.createLazyHandle(command, { outputMode: mode } as FluentRunOptions<FluentOutputMode>);
       }
 
-      // Function call: string or array
-      return this.createLazyHandle(firstArg);
+      // Function call: string or array with optional options
+      const command = firstArg as string | string[];
+      const options = rest[0] as FluentRunOptions | undefined;
+
+      // Determine effective output mode (options override shell default)
+      const effectiveMode = (options?.outputMode ?? this.outputMode) as OutputMode;
+
+      // Validate effective mode
+      this.assertFluentMode(effectiveMode);
+
+      // Create lazy handle with effective options
+      const effectiveOptions: FluentRunOptions<FluentOutputMode> = {
+        ...(options ?? {}),
+        outputMode: effectiveMode,
+      };
+
+      return this.createLazyHandle(command, effectiveOptions);
     }) as DollarFunction;
   }
 }
