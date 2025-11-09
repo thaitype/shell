@@ -5,12 +5,12 @@
 
 ## cleaner shell api
 
-- export const $ = shell.createFluentShell(); // in the library code of @thaitype/shell
+- export const $ = shell.asFluent(); // in the library code of @thaitype/shell
 or user need some custom config, user can do like this:
 
 ```ts
 import { createShell } from '@thaitype/shell';
-export const $ = createShell({ verbose: true }).createFluentShell();
+export const $ = createShell({ verbose: true }).asFluent();
 
 ```
 

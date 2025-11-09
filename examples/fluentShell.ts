@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 async function main() {
   // Create a fluent shell function
-  const $ = createShell({ verbose: false }).createFluentShell();
+  const $ = createShell({ verbose: false }).asFluent();
 
   console.log('=== Example 1: Direct await ===');
   // Direct await - returns stdout as string
@@ -41,7 +41,7 @@ async function main() {
   const data = await $('echo test-dir');
   console.log(`Creating directory: ${data}`);
   // Note: Using dry run to avoid actually creating the directory
-  const $dryRun = createShell({ dryRun: true }).createFluentShell();
+  const $dryRun = createShell({ dryRun: true }).asFluent();
   await $dryRun(`mkdir ${data}`);
 
   console.log('\n=== Example 5: Working with multiple lines ===');

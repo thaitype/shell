@@ -4,7 +4,7 @@
 Implement a fluent shell API that provides a cleaner, more ergonomic interface for running shell commands with helper methods for common output transformations.
 
 ## Goals
-- Create `createFluentShell()` method on Shell class that returns a `$` function
+- Create `asFluent()` method on Shell class that returns a `$` function
 - Implement `CommandHandle` as a `PromiseLike<string>` with helper methods
 - Support direct awaiting: `await $('echo test')` returns stdout as string
 - Support helper methods before await: `await $('ls').toLines()` returns array of lines
@@ -31,7 +31,7 @@ Add method to Shell class:
 class Shell {
   // ... existing methods ...
 
-  createFluentShell(): FluentShellFn {
+  asFluent(): FluentShellFn {
     // Implementation
   }
 }
@@ -44,7 +44,7 @@ class Shell {
 - Create `FluentShellFn` type alias
 - Ensure types are exported from `src/index.ts`
 
-### Step 2: Implement createFluentShell() Method
+### Step 2: Implement asFluent() Method
 Add to Shell class:
 - Return a function that accepts command (string | string[])
 - Function returns CommandHandle instance
@@ -79,7 +79,7 @@ Update or create example files showing:
 - Basic usage: `const result = await $('ls -la')`
 - Using toLines(): `const files = await $('ls').toLines()`
 - Using parse() with Zod schema
-- Custom shell config: `createShell({ verbose: true }).createFluentShell()`
+- Custom shell config: `createShell({ verbose: true }).asFluent()`
 
 ## Technical Considerations
 
@@ -121,7 +121,7 @@ return handle as CommandHandle;
 1. `src/shell.ts`
    - Add `CommandHandle` type
    - Add `FluentShellFn` type
-   - Add `createFluentShell()` method to Shell class
+   - Add `asFluent()` method to Shell class
 
 2. `src/index.ts`
    - Export new types: `CommandHandle`, `FluentShellFn`
@@ -134,7 +134,7 @@ return handle as CommandHandle;
 
 ## Success Criteria
 
-- ✅ `const $ = createShell().createFluentShell()` works
+- ✅ `const $ = createShell().asFluent()` works
 - ✅ `await $('echo test')` returns 'test'
 - ✅ `await $('ls').toLines()` returns array of lines
 - ✅ `await $('echo \'{"a":1}\'').parse(schema)` parses JSON

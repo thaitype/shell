@@ -663,7 +663,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    *
    * @example Basic usage
    * ```typescript
-   * const $ = createShell({ verbose: true }).createFluentShell();
+   * const $ = createShell({ verbose: true }).asFluent();
    *
    * // Direct await - returns stdout as string
    * const result = await $('echo hello');
@@ -672,7 +672,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    *
    * @example Using toLines()
    * ```typescript
-   * const $ = createShell().createFluentShell();
+   * const $ = createShell().asFluent();
    *
    * const files = await $('ls -la').toLines();
    * for (const file of files) {
@@ -683,7 +683,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    * @example Using parse() with Zod
    * ```typescript
    * import { z } from 'zod';
-   * const $ = createShell().createFluentShell();
+   * const $ = createShell().asFluent();
    *
    * const UserSchema = z.object({
    *   login: z.string(),
@@ -696,13 +696,13 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    *
    * @example Chaining commands
    * ```typescript
-   * const $ = createShell().createFluentShell();
+   * const $ = createShell().asFluent();
    *
    * const data = await $('echo test');
    * await $(`mkdir ${data}`);
    * ```
    */
-  public createFluentShell(): FluentShellFn {
+  public asFluent(): FluentShellFn {
     return (command: string | string[]): CommandHandle => {
       // Execute the command and get a promise for the stdout
       const execPromise = this.run<'capture'>(command, { outputMode: 'capture' }).then(result => {

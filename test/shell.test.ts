@@ -737,16 +737,16 @@ describe('Shell', () => {
     });
   });
 
-  describe('Fluent Shell API - createFluentShell', () => {
+  describe('Fluent Shell API - asFluent', () => {
     it('should create a fluent shell function', () => {
       const shell = createShell();
-      const $ = shell.createFluentShell();
+      const $ = shell.asFluent();
 
       expect(typeof $).toBe('function');
     });
 
     it('should execute command and return stdout when awaited directly', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const result = await $('echo hello');
 
@@ -754,7 +754,7 @@ describe('Shell', () => {
     });
 
     it('should handle command as array', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const result = await $(['echo', 'world']);
 
@@ -762,7 +762,7 @@ describe('Shell', () => {
     });
 
     it('should return empty string for commands with no output', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const result = await $('true');
 
@@ -770,7 +770,7 @@ describe('Shell', () => {
     });
 
     it('should work with shell configuration', async () => {
-      const $ = createShell({ verbose: true }).createFluentShell();
+      const $ = createShell({ verbose: true }).asFluent();
 
       const result = await $('echo test');
 
@@ -778,7 +778,7 @@ describe('Shell', () => {
     });
 
     it('should propagate errors when command fails', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       await expect($('sh -c "exit 1"')).rejects.toThrow();
     });
@@ -786,7 +786,7 @@ describe('Shell', () => {
 
   describe('Fluent Shell API - toLines()', () => {
     it('should split output into array of lines', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const lines = await $('printf "line1\\nline2\\nline3"').toLines();
 
@@ -794,7 +794,7 @@ describe('Shell', () => {
     });
 
     it('should handle Windows line endings', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const lines = await $('printf "line1\\r\\nline2\\r\\nline3"').toLines();
 
@@ -802,7 +802,7 @@ describe('Shell', () => {
     });
 
     it('should return empty array for commands with no output', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const lines = await $('true').toLines();
 
@@ -810,7 +810,7 @@ describe('Shell', () => {
     });
 
     it('should handle single line output', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const lines = await $('echo single').toLines();
 
@@ -818,7 +818,7 @@ describe('Shell', () => {
     });
 
     it('should handle output with trailing newline', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const lines = await $('printf "a\\nb\\nc\\n"').toLines();
 
@@ -829,7 +829,7 @@ describe('Shell', () => {
     });
 
     it('should propagate errors when command fails', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       await expect($('sh -c "exit 1"').toLines()).rejects.toThrow();
     });
@@ -837,7 +837,7 @@ describe('Shell', () => {
 
   describe('Fluent Shell API - parse()', () => {
     it('should parse JSON output with Zod schema', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
       const schema = z.object({
         name: z.string(),
         id: z.number(),
@@ -850,7 +850,7 @@ describe('Shell', () => {
     });
 
     it('should work with nested objects', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
       const schema = z.object({
         user: z.object({
           name: z.string(),
@@ -865,7 +865,7 @@ describe('Shell', () => {
     });
 
     it('should work with arrays', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
       const schema = z.object({
         items: z.array(z.string()),
       });
@@ -876,7 +876,7 @@ describe('Shell', () => {
     });
 
     it('should throw error when JSON is invalid', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
       const schema = z.object({ value: z.string() });
 
       await expect(
@@ -885,7 +885,7 @@ describe('Shell', () => {
     });
 
     it('should throw error when schema validation fails', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
       const schema = z.object({
         name: z.string(),
         count: z.number(),
@@ -897,7 +897,7 @@ describe('Shell', () => {
     });
 
     it('should work with custom schema objects', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       // Custom schema with parse method
       const customSchema = {
@@ -915,7 +915,7 @@ describe('Shell', () => {
     });
 
     it('should propagate command execution errors', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
       const schema = z.object({ value: z.string() });
 
       await expect($('sh -c "exit 1"').parse(schema)).rejects.toThrow();
@@ -924,7 +924,7 @@ describe('Shell', () => {
 
   describe('Fluent Shell API - Chaining Commands', () => {
     it('should allow chaining commands using results', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const data = await $('echo test');
       const result = await $(`echo ${data}`);
@@ -933,7 +933,7 @@ describe('Shell', () => {
     });
 
     it('should work with toLines() results', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const lines = await $('printf "a\\nb\\nc"').toLines();
 
@@ -945,7 +945,7 @@ describe('Shell', () => {
     });
 
     it('should work with parse() results', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
       const schema = z.object({
         dir: z.string(),
       });
@@ -964,7 +964,7 @@ describe('Shell', () => {
         verbose: true,
         logger: { debug: mockDebug }
       });
-      const $ = shell.createFluentShell();
+      const $ = shell.asFluent();
 
       await $('echo test');
 
@@ -972,7 +972,7 @@ describe('Shell', () => {
     });
 
     it('should respect dry run mode', async () => {
-      const $ = createShell({ dryRun: true }).createFluentShell();
+      const $ = createShell({ dryRun: true }).asFluent();
 
       // This would fail if executed, but should succeed in dry run
       const result = await $('sh -c "exit 1"');
@@ -981,7 +981,7 @@ describe('Shell', () => {
     });
 
     it('should respect throwMode setting', async () => {
-      const $ = createShell({ throwMode: 'simple' }).createFluentShell();
+      const $ = createShell({ throwMode: 'simple' }).asFluent();
 
       try {
         await $('sh -c "exit 1"');
@@ -995,7 +995,7 @@ describe('Shell', () => {
 
     it('should always use capture mode', async () => {
       // Even with live mode as default, fluent shell should capture
-      const $ = createShell({ outputMode: 'live' }).createFluentShell();
+      const $ = createShell({ outputMode: 'live' }).asFluent();
 
       const result = await $('echo captured');
 
@@ -1006,7 +1006,7 @@ describe('Shell', () => {
 
   describe('Fluent Shell API - Edge Cases', () => {
     it('should handle empty string output', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const result = await $('echo -n ""');
 
@@ -1014,7 +1014,7 @@ describe('Shell', () => {
     });
 
     it('should handle commands with special characters', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const result = await $('echo "hello $world"');
 
@@ -1022,7 +1022,7 @@ describe('Shell', () => {
     });
 
     it('should handle multiline output', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const result = await $('printf "line1\\nline2"');
 
@@ -1031,7 +1031,7 @@ describe('Shell', () => {
     });
 
     it('should not allow awaiting twice', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       const handle = $('echo test');
       const result1 = await handle;
@@ -1042,7 +1042,7 @@ describe('Shell', () => {
     });
 
     it('should handle long output', async () => {
-      const $ = createShell().createFluentShell();
+      const $ = createShell().asFluent();
 
       // Generate 100 lines
       const result = await $('seq 1 100').toLines();
