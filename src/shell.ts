@@ -253,14 +253,16 @@ export type CommandHandle = PromiseLike<string> & {
   toLines(): Promise<string[]>;
 
   /**
-   * Parse stdout as JSON and validate with the provided schema.
-   * The schema must have a `parse(data: any): T` method (compatible with Zod and other validators).
+   * Parse stdout as JSON and validate with the provided Standard Schema V1.
+   * The schema must implement the Standard Schema V1 interface (e.g., Zod schemas).
    *
-   * @template T - The inferred output type from the schema
-   * @param schema - A schema object with a parse method (e.g., Zod schema)
+   * @template T - A Standard Schema V1 schema type
+   * @param schema - A Standard Schema V1 compatible schema
    * @returns Promise resolving to the parsed and validated data
+   *
+   * @see https://github.com/standard-schema/standard-schema
    */
-  parse<T>(schema: { parse(x: any): T }): Promise<T>;
+  parse<T extends StandardSchemaV1>(schema: T): Promise<StandardSchemaV1.InferOutput<T>>;
 };
 
 /**
@@ -361,7 +363,7 @@ export type LazyCommandHandle = PromiseLike<string> & {
    * @param schema - A schema object with a parse method (e.g., Zod schema)
    * @returns Promise resolving to the parsed and validated data
    */
-  parse<T>(schema: { parse(x: any): T }): Promise<T>;
+  parse<T extends StandardSchemaV1>(schema: T): Promise<StandardSchemaV1.InferOutput<T>>;
 };
 
 /**
@@ -878,14 +880,13 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
 
     // Helper method: parse JSON and validate with schema
     // Throws if command failed or if JSON parsing/validation fails
-    handle.parse = <T>(schema: { parse(x: unknown): T }): Promise<T> => {
+    handle.parse = <T extends StandardSchemaV1>(schema: T): Promise<StandardSchemaV1.InferOutput<T>> => {
       return start().then(result => {
         if (!result.success) {
           const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
           throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
         }
-        const parsed = JSON.parse(result.stdout);
-        return schema.parse(parsed);
+        return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
       });
     };
 

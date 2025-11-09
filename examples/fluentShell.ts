@@ -52,19 +52,17 @@ async function main() {
     console.log(`  ${index + 1}. ${fruit}`);
   });
 
-  console.log('\n=== Example 6: Custom schema ===');
-  // Use a custom schema object with parse method
-  const customSchema = {
-    parse: (data: any) => {
-      return {
-        ...data,
-        uppercase: data.name ? data.name.toUpperCase() : 'UNKNOWN',
-      };
-    },
-  };
+  console.log('\n=== Example 6: Complex schema validation ===');
+  // Use Zod schema with transformations
+  const TransformSchema = z.object({
+    name: z.string(),
+  }).transform(data => ({
+    ...data,
+    uppercase: data.name.toUpperCase(),
+  }));
 
-  const customResult = await $('echo \'{"name":"fluent-shell"}\'').parse(customSchema);
-  console.log(`Custom result: ${customResult.uppercase}`);
+  const transformResult = await $('echo \'{"name":"fluent-shell"}\'').parse(TransformSchema);
+  console.log(`Transformed result: ${transformResult.uppercase}`);
 
   console.log('\n✅ All examples completed successfully!');
 }

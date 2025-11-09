@@ -896,24 +896,6 @@ describe('Shell', () => {
       ).rejects.toThrow();
     });
 
-    it('should work with custom schema objects', async () => {
-      const $ = createShell().asFluent();
-
-      // Custom schema with parse method
-      const customSchema = {
-        parse: (data: any) => {
-          if (typeof data.value === 'string') {
-            return { value: data.value.toUpperCase() };
-          }
-          throw new Error('Invalid schema');
-        }
-      };
-
-      const result = await $('echo \'{"value":"hello"}\'').parse(customSchema);
-
-      expect(result.value).toBe('HELLO');
-    });
-
     it('should propagate command execution errors', async () => {
       const $ = createShell().asFluent();
       const schema = z.object({ value: z.string() });
