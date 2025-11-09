@@ -218,7 +218,7 @@ export interface SafeResult<Capture extends boolean> extends StrictResult<Captur
  * @template Throw - Whether the method throws on error (true for run(), false for safeRun())
  * @template Mode - The output mode used for the command
  */
-export type RunResult<Throw extends boolean, Mode extends OutputMode> = Throw extends true
+export type ExecutionResult<Throw extends boolean, Mode extends OutputMode> = Throw extends true
   ? StrictResult<CaptureForMode<Mode>>
   : SafeResult<CaptureForMode<Mode>>;
 
@@ -317,9 +317,9 @@ export type LazyCommandHandle = PromiseLike<string> & {
    * Non-throwable execution - returns result object with success flag.
    * This method never throws, even if the command fails.
    *
-   * @returns Promise resolving to RunResult with success, stdout, stderr, and exitCode
+   * @returns Promise resolving to ExecutionResult with success, stdout, stderr, and exitCode
    */
-  result(): Promise<RunResult<false, 'capture'>>;
+  result(): Promise<ExecutionResult<false, 'capture'>>;
 
   /**
    * Split stdout by newlines and return as array of strings.
@@ -601,7 +601,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   public async execute<Throw extends boolean = true, Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode> & { throwOnError?: Throw }
-  ): Promise<RunResult<Throw, Mode>> {
+  ): Promise<ExecutionResult<Throw, Mode>> {
     const args = Array.isArray(cmd) ? cmd : parseArgsStringToArgv(cmd);
 
     const [program, ...cmdArgs] = args;
@@ -643,7 +643,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     }
 
     if (dryRun) {
-      return { stdout: '', stderr: '', exitCode: 0, success: true } as RunResult<Throw, Mode>;
+      return { stdout: '', stderr: '', exitCode: 0, success: true } as ExecutionResult<Throw, Mode>;
     }
 
     try {
@@ -654,7 +654,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stderr: result.stderr ? String(result.stderr) : null,
         exitCode: result.exitCode,
         success: result.exitCode === 0,
-      } as RunResult<Throw, Mode>;
+      } as ExecutionResult<Throw, Mode>;
     } catch (error: unknown) {
       if (error instanceof ExecaError) {
         if (options?.throwOnError) {
@@ -672,7 +672,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stderr: null,
         exitCode: undefined,
         success: false,
-      } as RunResult<Throw, Mode>;
+      } as ExecutionResult<Throw, Mode>;
     }
   }
 
@@ -705,7 +705,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   public async run<Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode>
-  ): Promise<RunResult<true, Mode>> {
+  ): Promise<ExecutionResult<true, Mode>> {
     return this.execute<true, Mode>(cmd, { ...options, throwOnError: true });
   }
 
@@ -738,7 +738,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   public async safeRun<Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode>
-  ): Promise<RunResult<false, Mode>> {
+  ): Promise<ExecutionResult<false, Mode>> {
     return this.execute<false, Mode>(cmd, { ...options, throwOnError: false });
   }
 
@@ -827,10 +827,10 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    */
   private createLazyHandle(command: string | string[]): LazyCommandHandle {
     // Memoized execution promise - null until first consumption
-    let executionPromise: Promise<RunResult<false, 'capture'>> | null = null;
+    let executionPromise: Promise<ExecutionResult<false, 'capture'>> | null = null;
 
     // Lazy executor - runs command once and memoizes result
-    const start = (): Promise<RunResult<false, 'capture'>> => {
+    const start = (): Promise<ExecutionResult<false, 'capture'>> => {
       if (executionPromise === null) {
         executionPromise = this.safeRun(command, { outputMode: 'capture' }).then(result => ({
           success: result.success,
