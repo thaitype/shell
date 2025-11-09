@@ -223,6 +223,55 @@ export type RunResult<Throw extends boolean, Mode extends OutputMode> = Throw ex
   : SafeResult<CaptureForMode<Mode>>;
 
 /**
+ * A handle for a command execution that can be awaited directly or have helper methods called on it.
+ *
+ * This type implements the PromiseLike interface, allowing it to be awaited directly to get stdout,
+ * while also providing helper methods for common transformations.
+ *
+ * @example Direct await
+ * ```typescript
+ * const result = await $('echo hello'); // Returns 'hello'
+ * ```
+ *
+ * @example Using toLines()
+ * ```typescript
+ * const lines = await $('ls -la').toLines(); // Returns array of lines
+ * ```
+ *
+ * @example Using parse()
+ * ```typescript
+ * const data = await $('echo \'{"key":"value"}\'').parse(schema);
+ * ```
+ */
+export type CommandHandle = PromiseLike<string> & {
+  /**
+   * Split stdout by newlines and return as array of strings.
+   * Handles both Unix (\n) and Windows (\r\n) line endings.
+   *
+   * @returns Promise resolving to array of lines from stdout
+   */
+  toLines(): Promise<string[]>;
+
+  /**
+   * Parse stdout as JSON and validate with the provided schema.
+   * The schema must have a `parse(data: any): T` method (compatible with Zod and other validators).
+   *
+   * @template T - The inferred output type from the schema
+   * @param schema - A schema object with a parse method (e.g., Zod schema)
+   * @returns Promise resolving to the parsed and validated data
+   */
+  parse<T>(schema: { parse(x: any): T }): Promise<T>;
+};
+
+/**
+ * A function that creates CommandHandle instances for fluent command execution.
+ *
+ * @param command - Command to execute, as string or array of arguments
+ * @returns A CommandHandle that can be awaited or have helper methods called
+ */
+export type FluentShellFn = (command: string | string[]) => CommandHandle;
+
+/**
  * Factory function to create a new Shell instance with type inference.
  * Provides better type safety and convenience compared to using `new Shell()`.
  *
@@ -601,5 +650,88 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         error: [{ message: 'Unable to Parse JSON: ' + (e instanceof Error ? e.message : String(e)) + verboseInfo }],
       };
     }
+  }
+
+  /**
+   * Create a fluent shell function for cleaner command execution syntax.
+   *
+   * Returns a function that can be used to execute commands with a more ergonomic API.
+   * The returned function creates a CommandHandle that can be awaited directly or have
+   * helper methods called on it before awaiting.
+   *
+   * @returns A fluent shell function that accepts commands and returns CommandHandle instances
+   *
+   * @example Basic usage
+   * ```typescript
+   * const $ = createShell({ verbose: true }).createFluentShell();
+   *
+   * // Direct await - returns stdout as string
+   * const result = await $('echo hello');
+   * console.log(result); // 'hello'
+   * ```
+   *
+   * @example Using toLines()
+   * ```typescript
+   * const $ = createShell().createFluentShell();
+   *
+   * const files = await $('ls -la').toLines();
+   * for (const file of files) {
+   *   console.log(`File: ${file}`);
+   * }
+   * ```
+   *
+   * @example Using parse() with Zod
+   * ```typescript
+   * import { z } from 'zod';
+   * const $ = createShell().createFluentShell();
+   *
+   * const UserSchema = z.object({
+   *   login: z.string(),
+   *   id: z.number(),
+   * });
+   *
+   * const user = await $('gh api /user').parse(UserSchema);
+   * console.log('User login:', user.login);
+   * ```
+   *
+   * @example Chaining commands
+   * ```typescript
+   * const $ = createShell().createFluentShell();
+   *
+   * const data = await $('echo test');
+   * await $(`mkdir ${data}`);
+   * ```
+   */
+  public createFluentShell(): FluentShellFn {
+    return (command: string | string[]): CommandHandle => {
+      // Execute the command and get a promise for the stdout
+      const execPromise = this.run<'capture'>(command, { outputMode: 'capture' }).then(result => {
+        // For capture mode, stdout is always a string (or null for live mode, but we force capture here)
+        return result.stdout ?? '';
+      });
+
+      // Create the handle object
+      const handle: Partial<CommandHandle> = {};
+
+      // Make it thenable by binding the promise's then method
+      handle.then = execPromise.then.bind(execPromise);
+
+      // Add helper method to split stdout into lines
+      handle.toLines = () =>
+        execPromise.then(stdout => {
+          if (!stdout) return [];
+          return stdout.split(/\r?\n/);
+        });
+
+      // Add helper method to parse JSON and validate with schema
+      handle.parse = <T>(schema: { parse(x: any): T }): Promise<T> => {
+        return execPromise.then(stdout => {
+          const parsed = JSON.parse(stdout);
+          return schema.parse(parsed);
+        });
+      };
+
+      return handle as CommandHandle;
+    };
   }
 }

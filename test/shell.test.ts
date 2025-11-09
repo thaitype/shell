@@ -736,4 +736,318 @@ describe('Shell', () => {
       }
     });
   });
+
+  describe('Fluent Shell API - createFluentShell', () => {
+    it('should create a fluent shell function', () => {
+      const shell = createShell();
+      const $ = shell.createFluentShell();
+
+      expect(typeof $).toBe('function');
+    });
+
+    it('should execute command and return stdout when awaited directly', async () => {
+      const $ = createShell().createFluentShell();
+
+      const result = await $('echo hello');
+
+      expect(result).toBe('hello');
+    });
+
+    it('should handle command as array', async () => {
+      const $ = createShell().createFluentShell();
+
+      const result = await $(['echo', 'world']);
+
+      expect(result).toBe('world');
+    });
+
+    it('should return empty string for commands with no output', async () => {
+      const $ = createShell().createFluentShell();
+
+      const result = await $('true');
+
+      expect(result).toBe('');
+    });
+
+    it('should work with shell configuration', async () => {
+      const $ = createShell({ verbose: true }).createFluentShell();
+
+      const result = await $('echo test');
+
+      expect(result).toBe('test');
+    });
+
+    it('should propagate errors when command fails', async () => {
+      const $ = createShell().createFluentShell();
+
+      await expect($('sh -c "exit 1"')).rejects.toThrow();
+    });
+  });
+
+  describe('Fluent Shell API - toLines()', () => {
+    it('should split output into array of lines', async () => {
+      const $ = createShell().createFluentShell();
+
+      const lines = await $('printf "line1\\nline2\\nline3"').toLines();
+
+      expect(lines).toEqual(['line1', 'line2', 'line3']);
+    });
+
+    it('should handle Windows line endings', async () => {
+      const $ = createShell().createFluentShell();
+
+      const lines = await $('printf "line1\\r\\nline2\\r\\nline3"').toLines();
+
+      expect(lines).toEqual(['line1', 'line2', 'line3']);
+    });
+
+    it('should return empty array for commands with no output', async () => {
+      const $ = createShell().createFluentShell();
+
+      const lines = await $('true').toLines();
+
+      expect(lines).toEqual([]);
+    });
+
+    it('should handle single line output', async () => {
+      const $ = createShell().createFluentShell();
+
+      const lines = await $('echo single').toLines();
+
+      expect(lines).toEqual(['single']);
+    });
+
+    it('should handle output with trailing newline', async () => {
+      const $ = createShell().createFluentShell();
+
+      const lines = await $('printf "a\\nb\\nc\\n"').toLines();
+
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines).toContain('a');
+      expect(lines).toContain('b');
+      expect(lines).toContain('c');
+    });
+
+    it('should propagate errors when command fails', async () => {
+      const $ = createShell().createFluentShell();
+
+      await expect($('sh -c "exit 1"').toLines()).rejects.toThrow();
+    });
+  });
+
+  describe('Fluent Shell API - parse()', () => {
+    it('should parse JSON output with Zod schema', async () => {
+      const $ = createShell().createFluentShell();
+      const schema = z.object({
+        name: z.string(),
+        id: z.number(),
+      });
+
+      const result = await $('echo \'{"name":"test","id":42}\'').parse(schema);
+
+      expect(result.name).toBe('test');
+      expect(result.id).toBe(42);
+    });
+
+    it('should work with nested objects', async () => {
+      const $ = createShell().createFluentShell();
+      const schema = z.object({
+        user: z.object({
+          name: z.string(),
+          email: z.string(),
+        }),
+      });
+
+      const result = await $('echo \'{"user":{"name":"John","email":"john@example.com"}}\'').parse(schema);
+
+      expect(result.user.name).toBe('John');
+      expect(result.user.email).toBe('john@example.com');
+    });
+
+    it('should work with arrays', async () => {
+      const $ = createShell().createFluentShell();
+      const schema = z.object({
+        items: z.array(z.string()),
+      });
+
+      const result = await $('echo \'{"items":["a","b","c"]}\'').parse(schema);
+
+      expect(result.items).toEqual(['a', 'b', 'c']);
+    });
+
+    it('should throw error when JSON is invalid', async () => {
+      const $ = createShell().createFluentShell();
+      const schema = z.object({ value: z.string() });
+
+      await expect(
+        $('echo "not valid json"').parse(schema)
+      ).rejects.toThrow();
+    });
+
+    it('should throw error when schema validation fails', async () => {
+      const $ = createShell().createFluentShell();
+      const schema = z.object({
+        name: z.string(),
+        count: z.number(),
+      });
+
+      await expect(
+        $('echo \'{"name":"test","count":"not-a-number"}\'').parse(schema)
+      ).rejects.toThrow();
+    });
+
+    it('should work with custom schema objects', async () => {
+      const $ = createShell().createFluentShell();
+
+      // Custom schema with parse method
+      const customSchema = {
+        parse: (data: any) => {
+          if (typeof data.value === 'string') {
+            return { value: data.value.toUpperCase() };
+          }
+          throw new Error('Invalid schema');
+        }
+      };
+
+      const result = await $('echo \'{"value":"hello"}\'').parse(customSchema);
+
+      expect(result.value).toBe('HELLO');
+    });
+
+    it('should propagate command execution errors', async () => {
+      const $ = createShell().createFluentShell();
+      const schema = z.object({ value: z.string() });
+
+      await expect($('sh -c "exit 1"').parse(schema)).rejects.toThrow();
+    });
+  });
+
+  describe('Fluent Shell API - Chaining Commands', () => {
+    it('should allow chaining commands using results', async () => {
+      const $ = createShell().createFluentShell();
+
+      const data = await $('echo test');
+      const result = await $(`echo ${data}`);
+
+      expect(result).toBe('test');
+    });
+
+    it('should work with toLines() results', async () => {
+      const $ = createShell().createFluentShell();
+
+      const lines = await $('printf "a\\nb\\nc"').toLines();
+
+      expect(lines).toHaveLength(3);
+
+      // Use first line in another command
+      const result = await $(`echo ${lines[0]}`);
+      expect(result).toBe('a');
+    });
+
+    it('should work with parse() results', async () => {
+      const $ = createShell().createFluentShell();
+      const schema = z.object({
+        dir: z.string(),
+      });
+
+      const config = await $('echo \'{"dir":"tmp"}\'').parse(schema);
+      const result = await $(`echo ${config.dir}`);
+
+      expect(result).toBe('tmp');
+    });
+  });
+
+  describe('Fluent Shell API - Integration with Shell Options', () => {
+    it('should respect verbose mode', async () => {
+      const mockDebug = vi.fn();
+      const shell = createShell({
+        verbose: true,
+        logger: { debug: mockDebug }
+      });
+      const $ = shell.createFluentShell();
+
+      await $('echo test');
+
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
+    });
+
+    it('should respect dry run mode', async () => {
+      const $ = createShell({ dryRun: true }).createFluentShell();
+
+      // This would fail if executed, but should succeed in dry run
+      const result = await $('sh -c "exit 1"');
+
+      expect(result).toBe('');
+    });
+
+    it('should respect throwMode setting', async () => {
+      const $ = createShell({ throwMode: 'simple' }).createFluentShell();
+
+      try {
+        await $('sh -c "exit 1"');
+        expect.fail('Should have thrown');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toContain('Command failed');
+        expect(message).toContain('Exit code: 1');
+      }
+    });
+
+    it('should always use capture mode', async () => {
+      // Even with live mode as default, fluent shell should capture
+      const $ = createShell({ outputMode: 'live' }).createFluentShell();
+
+      const result = await $('echo captured');
+
+      // Should still capture output despite shell default being live
+      expect(result).toBe('captured');
+    });
+  });
+
+  describe('Fluent Shell API - Edge Cases', () => {
+    it('should handle empty string output', async () => {
+      const $ = createShell().createFluentShell();
+
+      const result = await $('echo -n ""');
+
+      expect(result).toBe('');
+    });
+
+    it('should handle commands with special characters', async () => {
+      const $ = createShell().createFluentShell();
+
+      const result = await $('echo "hello $world"');
+
+      expect(result).toContain('hello');
+    });
+
+    it('should handle multiline output', async () => {
+      const $ = createShell().createFluentShell();
+
+      const result = await $('printf "line1\\nline2"');
+
+      expect(result).toContain('line1');
+      expect(result).toContain('line2');
+    });
+
+    it('should not allow awaiting twice', async () => {
+      const $ = createShell().createFluentShell();
+
+      const handle = $('echo test');
+      const result1 = await handle;
+      const result2 = await handle; // Awaiting the same promise again
+
+      expect(result1).toBe('test');
+      expect(result2).toBe('test');
+    });
+
+    it('should handle long output', async () => {
+      const $ = createShell().createFluentShell();
+
+      // Generate 100 lines
+      const result = await $('seq 1 100').toLines();
+
+      expect(result.length).toBeGreaterThanOrEqual(100);
+    });
+  });
 });
