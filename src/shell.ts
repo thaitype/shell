@@ -273,30 +273,6 @@ export type CommandHandle = PromiseLike<string> & {
  */
 export type FluentShellFn = (command: string | string[]) => CommandHandle;
 
-/**
- * Result type for non-throwable command execution.
- * Returned by the `.result()` method on LazyCommandHandle.
- *
- * @example
- * ```typescript
- * const $ = createShell().asFluent();
- * const r = await $`exit 1`.result();
- * if (!r.success) {
- *   console.error(`Command failed with exit code ${r.exitCode}`);
- *   console.error(`Stderr: ${r.stderr}`);
- * }
- * ```
- */
-export type CommandResult = {
-  /** True if the command exited with code 0 */
-  success: boolean;
-  /** Captured stdout output */
-  stdout: string;
-  /** Captured stderr output */
-  stderr: string;
-  /** Exit code (undefined if process failed to start) */
-  exitCode: number | undefined;
-};
 
 /**
  * Command handle with lazy execution and memoization.
@@ -341,9 +317,9 @@ export type LazyCommandHandle = PromiseLike<string> & {
    * Non-throwable execution - returns result object with success flag.
    * This method never throws, even if the command fails.
    *
-   * @returns Promise resolving to CommandResult with success, stdout, stderr, and exitCode
+   * @returns Promise resolving to RunResult with success, stdout, stderr, and exitCode
    */
-  result(): Promise<CommandResult>;
+  result(): Promise<RunResult<false, 'capture'>>;
 
   /**
    * Split stdout by newlines and return as array of strings.
@@ -851,10 +827,10 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
    */
   private createLazyHandle(command: string | string[]): LazyCommandHandle {
     // Memoized execution promise - null until first consumption
-    let executionPromise: Promise<CommandResult> | null = null;
+    let executionPromise: Promise<RunResult<false, 'capture'>> | null = null;
 
     // Lazy executor - runs command once and memoizes result
-    const start = (): Promise<CommandResult> => {
+    const start = (): Promise<RunResult<false, 'capture'>> => {
       if (executionPromise === null) {
         executionPromise = this.safeRun(command, { outputMode: 'capture' }).then(result => ({
           success: result.success,
