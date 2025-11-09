@@ -272,6 +272,144 @@ export type CommandHandle = PromiseLike<string> & {
 export type FluentShellFn = (command: string | string[]) => CommandHandle;
 
 /**
+ * Result type for non-throwable command execution.
+ * Returned by the `.result()` method on LazyCommandHandle.
+ *
+ * @example
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const r = await $`exit 1`.result();
+ * if (!r.success) {
+ *   console.error(`Command failed with exit code ${r.exitCode}`);
+ *   console.error(`Stderr: ${r.stderr}`);
+ * }
+ * ```
+ */
+export type CommandResult = {
+  /** True if the command exited with code 0 */
+  success: boolean;
+  /** Captured stdout output */
+  stdout: string;
+  /** Captured stderr output */
+  stderr: string;
+  /** Exit code (undefined if process failed to start) */
+  exitCode: number | undefined;
+};
+
+/**
+ * Command handle with lazy execution and memoization.
+ * Extends CommandHandle with `.result()` method for non-throwable execution.
+ *
+ * Key features:
+ * - **Lazy execution**: Command doesn't run until first consumption (await, .result(), .toLines(), .parse())
+ * - **Memoization**: Multiple consumptions share the same execution
+ * - **Throwable path**: `await handle` throws on non-zero exit code
+ * - **Non-throwable path**: `await handle.result()` returns result with success flag
+ *
+ * @example Throwable execution
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * try {
+ *   const output = await $`exit 1`; // Throws error
+ * } catch (error) {
+ *   console.error(error);
+ * }
+ * ```
+ *
+ * @example Non-throwable execution
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const r = await $`exit 1`.result(); // Doesn't throw
+ * if (!r.success) {
+ *   console.error(r.exitCode, r.stderr);
+ * }
+ * ```
+ *
+ * @example Memoization
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const handle = $`echo test`;
+ * const a = await handle;           // Executes once
+ * const b = await handle;           // Reuses same execution
+ * const c = await handle.result();  // Still same execution
+ * ```
+ */
+export type LazyCommandHandle = PromiseLike<string> & {
+  /**
+   * Non-throwable execution - returns result object with success flag.
+   * This method never throws, even if the command fails.
+   *
+   * @returns Promise resolving to CommandResult with success, stdout, stderr, and exitCode
+   */
+  result(): Promise<CommandResult>;
+
+  /**
+   * Split stdout by newlines and return as array of strings.
+   * Handles both Unix (\n) and Windows (\r\n) line endings.
+   * Throws if command fails.
+   *
+   * @returns Promise resolving to array of lines from stdout
+   */
+  toLines(): Promise<string[]>;
+
+  /**
+   * Parse stdout as JSON and validate with the provided schema.
+   * The schema must have a `parse(data: any): T` method (compatible with Zod and other validators).
+   * Throws if command fails or if JSON parsing/validation fails.
+   *
+   * @template T - The inferred output type from the schema
+   * @param schema - A schema object with a parse method (e.g., Zod schema)
+   * @returns Promise resolving to the parsed and validated data
+   */
+  parse<T>(schema: { parse(x: any): T }): Promise<T>;
+};
+
+/**
+ * Function that supports both tagged templates and function calls for command execution.
+ * Returned by `shell.asFluent()`.
+ *
+ * Supports three call signatures:
+ * 1. Tagged template: `` $`echo hello` ``
+ * 2. String command: `$('echo hello')`
+ * 3. Argv array: `$(['echo', 'hello'])`
+ *
+ * @example Tagged template with interpolation
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const name = 'world';
+ * const result = await $`echo hello ${name}`;
+ * ```
+ *
+ * @example Function call with string
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const result = await $('echo hello');
+ * ```
+ *
+ * @example Function call with array
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const result = await $(['echo', 'hello']);
+ * ```
+ */
+export interface DollarFunction {
+  /**
+   * Tagged template call - interpolates values into command string
+   */
+  (parts: TemplateStringsArray, ...values: any[]): LazyCommandHandle;
+
+  /**
+   * String command call
+   */
+  (command: string): LazyCommandHandle;
+
+  /**
+   * Argv array call
+   */
+  (command: string[]): LazyCommandHandle;
+}
+
+/**
  * Factory function to create a new Shell instance with type inference.
  * Provides better type safety and convenience compared to using `new Shell()`.
  *
@@ -653,85 +791,169 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   }
 
   /**
-   * Create a fluent shell function for cleaner command execution syntax.
+   * Process tagged template literal into a command string.
+   * Interpolates values between template string parts.
    *
-   * Returns a function that can be used to execute commands with a more ergonomic API.
-   * The returned function creates a CommandHandle that can be awaited directly or have
-   * helper methods called on it before awaiting.
+   * @param parts - Template string parts (TemplateStringsArray)
+   * @param values - Interpolated values
+   * @returns Concatenated command string
    *
-   * @returns A fluent shell function that accepts commands and returns CommandHandle instances
+   * @internal
+   */
+  private processTaggedTemplate(parts: TemplateStringsArray, values: any[]): string {
+    // Interleave parts and values
+    // TODO: Implement argv-safe escaping for interpolated values
+    let result = parts[0];
+    for (let i = 0; i < values.length; i++) {
+      result += String(values[i]) + parts[i + 1];
+    }
+    return result;
+  }
+
+  /**
+   * Create a lazy command handle with memoized execution.
+   * The command doesn't execute until first consumption (await, .result(), .toLines(), .parse()).
+   * Multiple consumptions share the same execution result.
    *
-   * @example Basic usage
-   * ```typescript
-   * const $ = createShell({ verbose: true }).asFluent();
+   * @param command - Command to execute (string or array)
+   * @returns LazyCommandHandle with deferred execution
    *
-   * // Direct await - returns stdout as string
-   * const result = await $('echo hello');
-   * console.log(result); // 'hello'
-   * ```
+   * @internal
+   */
+  private createLazyHandle(command: string | string[]): LazyCommandHandle {
+    // Memoized execution promise - null until first consumption
+    let executionPromise: Promise<CommandResult> | null = null;
+
+    // Lazy executor - runs command once and memoizes result
+    const start = (): Promise<CommandResult> => {
+      if (executionPromise === null) {
+        executionPromise = this.safeRun(command, { outputMode: 'capture' }).then(result => ({
+          success: result.success,
+          stdout: result.stdout ?? '',
+          stderr: result.stderr ?? '',
+          exitCode: result.exitCode,
+        }));
+      }
+      return executionPromise;
+    };
+
+    const handle: Partial<LazyCommandHandle> = {};
+
+    // Throwable path: await handle
+    // Checks success and throws error if command failed
+    handle.then = (onFulfilled, onRejected) => {
+      return start()
+        .then(result => {
+          if (!result.success) {
+            // Throw error based on throwMode setting
+            if (this.throwMode === 'simple') {
+              const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+              throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
+            } else {
+              // For 'raw' mode, we'd need the original ExecaError
+              // Since we're using safeRun, we'll throw a simplified error
+              throw new Error(`Command failed with exit code ${result.exitCode}: ${result.stderr}`);
+            }
+          }
+          return result.stdout;
+        })
+        .then(onFulfilled, onRejected);
+    };
+
+    // Non-throwable path: handle.result()
+    // Returns CommandResult with success flag, never throws
+    handle.result = () => start();
+
+    // Helper method: split stdout into lines
+    // Throws if command failed
+    handle.toLines = () =>
+      start().then(result => {
+        if (!result.success) {
+          const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+          throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
+        }
+        if (!result.stdout) return [];
+        return result.stdout.split(/\r?\n/);
+      });
+
+    // Helper method: parse JSON and validate with schema
+    // Throws if command failed or if JSON parsing/validation fails
+    handle.parse = <T>(schema: { parse(x: unknown): T }): Promise<T> => {
+      return start().then(result => {
+        if (!result.success) {
+          const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+          throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
+        }
+        const parsed = JSON.parse(result.stdout);
+        return schema.parse(parsed);
+      });
+    };
+
+    return handle as LazyCommandHandle;
+  }
+
+  /**
+   * Create a fluent shell function with tagged template and lazy execution support.
    *
-   * @example Using toLines()
+   * Returns a function that supports:
+   * - Tagged templates: `` $`echo hello` ``
+   * - Function calls: `$('echo hello')` or `$(['echo', 'hello'])`
+   * - Lazy execution: command doesn't run until consumed
+   * - Memoization: multiple consumptions share one execution
+   * - Non-throwable path: `.result()` returns result with success flag
+   *
+   * @returns DollarFunction that supports tagged templates and function calls
+   *
+   * @example Tagged template
    * ```typescript
    * const $ = createShell().asFluent();
+   * const name = 'world';
+   * const result = await $`echo hello ${name}`; // 'hello world'
+   * ```
    *
-   * const files = await $('ls -la').toLines();
-   * for (const file of files) {
-   *   console.log(`File: ${file}`);
+   * @example Function call
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const result = await $('echo hello'); // 'hello'
+   * ```
+   *
+   * @example Non-throwable execution
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const r = await $`exit 1`.result();
+   * if (!r.success) {
+   *   console.error(`Failed with exit code ${r.exitCode}`);
    * }
    * ```
    *
-   * @example Using parse() with Zod
+   * @example Lazy + memoization
    * ```typescript
-   * import { z } from 'zod';
    * const $ = createShell().asFluent();
-   *
-   * const UserSchema = z.object({
-   *   login: z.string(),
-   *   id: z.number(),
-   * });
-   *
-   * const user = await $('gh api /user').parse(UserSchema);
-   * console.log('User login:', user.login);
+   * const handle = $`echo test`;
+   * const a = await handle;           // Executes once
+   * const b = await handle;           // Reuses execution
+   * const c = await handle.result();  // Still same execution
    * ```
    *
-   * @example Chaining commands
+   * @example Helper methods
    * ```typescript
    * const $ = createShell().asFluent();
-   *
-   * const data = await $('echo test');
-   * await $(`mkdir ${data}`);
+   * const lines = await $`ls -la`.toLines();
+   * const data = await $`cat package.json`.parse(schema);
    * ```
    */
-  public asFluent(): FluentShellFn {
-    return (command: string | string[]): CommandHandle => {
-      // Execute the command and get a promise for the stdout
-      const execPromise = this.run<'capture'>(command, { outputMode: 'capture' }).then(result => {
-        // For capture mode, stdout is always a string (or null for live mode, but we force capture here)
-        return result.stdout ?? '';
-      });
+  public asFluent(): DollarFunction {
+    return ((firstArg: any, ...rest: any[]): LazyCommandHandle => {
+      // Detect if it's a tagged template call
+      // Tagged templates pass TemplateStringsArray as first argument
+      if (Array.isArray(firstArg) && 'raw' in firstArg && Array.isArray((firstArg as any).raw)) {
+        // Tagged template: process interpolation
+        const command = this.processTaggedTemplate(firstArg as TemplateStringsArray, rest);
+        return this.createLazyHandle(command);
+      }
 
-      // Create the handle object
-      const handle: Partial<CommandHandle> = {};
-
-      // Make it thenable by binding the promise's then method
-      handle.then = execPromise.then.bind(execPromise);
-
-      // Add helper method to split stdout into lines
-      handle.toLines = () =>
-        execPromise.then(stdout => {
-          if (!stdout) return [];
-          return stdout.split(/\r?\n/);
-        });
-
-      // Add helper method to parse JSON and validate with schema
-      handle.parse = <T>(schema: { parse(x: any): T }): Promise<T> => {
-        return execPromise.then(stdout => {
-          const parsed = JSON.parse(stdout);
-          return schema.parse(parsed);
-        });
-      };
-
-      return handle as CommandHandle;
-    };
+      // Function call: string or array
+      return this.createLazyHandle(firstArg);
+    }) as DollarFunction;
   }
 }

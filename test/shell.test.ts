@@ -1050,4 +1050,315 @@ describe('Shell', () => {
       expect(result.length).toBeGreaterThanOrEqual(100);
     });
   });
+
+  describe('Fluent Shell API - Tagged Templates', () => {
+    it('should support tagged template basic usage', async () => {
+      const $ = createShell().asFluent();
+
+      const result = await $`echo hello`;
+
+      expect(result).toBe('hello');
+    });
+
+    it('should support tagged template with single interpolation', async () => {
+      const $ = createShell().asFluent();
+      const name = 'world';
+
+      const result = await $`echo hello ${name}`;
+
+      expect(result).toBe('hello world');
+    });
+
+    it('should support tagged template with multiple interpolations', async () => {
+      const $ = createShell().asFluent();
+      const a = 'foo';
+      const b = 'bar';
+      const c = 'baz';
+
+      const result = await $`echo ${a} ${b} ${c}`;
+
+      expect(result).toBe('foo bar baz');
+    });
+
+    it('should handle tagged template with number interpolation', async () => {
+      const $ = createShell().asFluent();
+      const num = 42;
+
+      const result = await $`echo ${num}`;
+
+      expect(result).toBe('42');
+    });
+
+    it('should handle tagged template with empty interpolation', async () => {
+      const $ = createShell().asFluent();
+      const empty = '';
+
+      const result = await $`echo test${empty}value`;
+
+      expect(result).toBe('testvalue');
+    });
+
+    it('should work with tagged template and toLines()', async () => {
+      const $ = createShell().asFluent();
+
+      const lines = await $`printf "a\nb\nc"`.toLines();
+
+      expect(lines).toEqual(['a', 'b', 'c']);
+    });
+
+    it('should work with tagged template and parse()', async () => {
+      const $ = createShell().asFluent();
+      const schema = z.object({
+        value: z.string(),
+      });
+
+      const result = await $`echo '{"value":"test"}'`.parse(schema);
+
+      expect(result.value).toBe('test');
+    });
+
+    it('should throw error for failing tagged template command', async () => {
+      const $ = createShell().asFluent();
+
+      await expect($`sh -c "exit 1"`).rejects.toThrow();
+    });
+  });
+
+  describe('Fluent Shell API - .result() Non-throwable Execution', () => {
+    it('should return success result for successful command', async () => {
+      const $ = createShell().asFluent();
+
+      const result = await $`echo test`.result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('test');
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should return failure result without throwing', async () => {
+      const $ = createShell().asFluent();
+
+      const result = await $`sh -c "exit 1"`.result();
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('should work with function call syntax', async () => {
+      const $ = createShell().asFluent();
+
+      const result = await $('sh -c "exit 42"').result();
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(42);
+    });
+
+    it('should capture stderr in result', async () => {
+      const $ = createShell().asFluent();
+
+      const result = await $`sh -c "echo error >&2; exit 1"`.result();
+
+      expect(result.success).toBe(false);
+      expect(result.stderr).toBe('error');
+    });
+
+    it('should work with array command syntax', async () => {
+      const $ = createShell().asFluent();
+
+      const result = await $(['echo', 'test']).result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('test');
+    });
+
+    it('should include both stdout and stderr on success', async () => {
+      const $ = createShell().asFluent();
+
+      const result = await $`sh -c "echo out; echo err >&2"`.result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('out');
+      expect(result.stderr).toBe('err');
+    });
+  });
+
+  describe('Fluent Shell API - Lazy Execution', () => {
+    it('should not execute immediately when handle is created', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      // Create handle - should NOT execute yet
+      const handle = $`echo test`;
+
+      // No execution yet
+      expect(mockDebug).not.toHaveBeenCalled();
+
+      // Consume the handle - NOW it executes
+      await handle;
+
+      // Now it executed
+      expect(mockDebug).toHaveBeenCalledWith('$ echo test', expect.any(Object));
+    });
+
+    it('should execute on first await', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      const handle = $`echo test`;
+      expect(mockDebug).not.toHaveBeenCalled();
+
+      const result = await handle;
+
+      expect(result).toBe('test');
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should execute on first .result() call', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      const handle = $`echo test`;
+      expect(mockDebug).not.toHaveBeenCalled();
+
+      const result = await handle.result();
+
+      expect(result.success).toBe(true);
+      expect(result.stdout).toBe('test');
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should execute on first .toLines() call', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      const handle = $`echo test`;
+      expect(mockDebug).not.toHaveBeenCalled();
+
+      const result = await handle.toLines();
+
+      expect(result).toEqual(['test']);
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should execute on first .parse() call', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+      const schema = z.object({ value: z.string() });
+
+      const handle = $`echo '{"value":"test"}'`;
+      expect(mockDebug).not.toHaveBeenCalled();
+
+      const result = await handle.parse(schema);
+
+      expect(result.value).toBe('test');
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Fluent Shell API - Memoization', () => {
+    it('should reuse execution when awaited multiple times', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      const handle = $`echo test`;
+
+      const result1 = await handle;
+      const result2 = await handle;
+      const result3 = await handle;
+
+      expect(result1).toBe('test');
+      expect(result2).toBe('test');
+      expect(result3).toBe('test');
+
+      // Should only execute once
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should share execution between await and .result()', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      const handle = $`echo test`;
+
+      const result1 = await handle;
+      const result2 = await handle.result();
+
+      expect(result1).toBe('test');
+      expect(result2.stdout).toBe('test');
+      expect(result2.success).toBe(true);
+
+      // Should only execute once
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should share execution between .result() and .toLines()', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      const handle = $`printf "a\nb"`;
+
+      const result1 = await handle.result();
+      const result2 = await handle.toLines();
+
+      expect(result1.stdout).toBe('a\nb');
+      expect(result2).toEqual(['a', 'b']);
+
+      // Should only execute once
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should share execution between all methods', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+
+      const handle = $`echo '{"value":"test"}'`;
+      const schema = z.object({ value: z.string() });
+
+      const result1 = await handle;
+      const result2 = await handle.result();
+      const result3 = await handle.parse(schema);
+
+      expect(result1).toBe('{"value":"test"}');
+      expect(result2.stdout).toBe('{"value":"test"}');
+      expect(result3.value).toBe('test');
+
+      // Should only execute once
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle errors consistently across multiple consumptions', async () => {
+      const $ = createShell().asFluent();
+
+      const handle = $`sh -c "exit 1"`;
+
+      // First consumption throws
+      await expect(handle).rejects.toThrow();
+
+      // Second consumption also throws (same error)
+      await expect(handle).rejects.toThrow();
+
+      // .result() doesn't throw but shows failure
+      const result = await handle.result();
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('should memoize with tagged template interpolation', async () => {
+      const mockDebug = vi.fn();
+      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
+      const name = 'world';
+
+      const handle = $`echo hello ${name}`;
+
+      const result1 = await handle;
+      const result2 = await handle;
+
+      expect(result1).toBe('hello world');
+      expect(result2).toBe('hello world');
+
+      // Should only execute once
+      expect(mockDebug).toHaveBeenCalledTimes(1);
+    });
+  });
 });
