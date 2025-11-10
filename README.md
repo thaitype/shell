@@ -15,16 +15,16 @@ import { createShell } from '@thaitype/shell';
 const $ = createShell().asFluent();
 
 // Simple and elegant
-const output = await $`echo hello world`;
+const output = await $('echo hello world');
 
 // Chain operations
-const lines = await $`ls -la`.toLines();
+const lines = await $('ls -la').toLines();
 
 // Parse JSON with validation
-const pkg = await $`cat package.json`.parse(schema);
+const pkg = await $('cat package.json').parse(schema);
 
 // Handle errors gracefully
-const result = await $`some-command`.result();
+const result = await $('some-command').result();
 if (!result.success) {
   console.error('Failed:', result.stderr);
 }
@@ -32,7 +32,7 @@ if (!result.success) {
 
 **Key Features:**
 
-- **Fluent API** - Elegant tagged template syntax and chainable methods
+- **Fluent API** - Elegant function call syntax with chainable methods
 - **Type-safe** - Full TypeScript support with automatic type inference
 - **Flexible output modes** - Capture, stream live, or both simultaneously
 - **Schema validation** - Built-in JSON parsing with Standard Schema (Zod, Valibot, etc.)
@@ -74,7 +74,7 @@ import { createShell } from '@thaitype/shell';
 const $ = createShell().asFluent();
 
 // Execute and get output
-const output = await $`echo "Hello World"`;
+const output = await $('echo "Hello World"');
 console.log(output); // "Hello World"
 
 // Use function call syntax
@@ -89,25 +89,9 @@ const files = await $(['echo', 'file with spaces.txt']);
 
 The fluent API provides an elegant, modern way to run shell commands with powerful features like lazy execution, memoization, and chainable operations.
 
-### Tagged Templates
+### Command Execution
 
-Use backticks for natural command syntax with interpolation:
-
-```typescript
-const $ = createShell().asFluent();
-
-const name = 'world';
-const greeting = await $`echo hello ${name}`;
-console.log(greeting); // "hello world"
-
-// Works with any shell command
-const files = await $`ls -la /tmp`;
-const branch = await $`git rev-parse --abbrev-ref HEAD`;
-```
-
-### Function Call Syntax
-
-For dynamic commands or when you need to pass options:
+Execute commands using string or array syntax:
 
 ```typescript
 const $ = createShell().asFluent();
@@ -129,7 +113,7 @@ Handle failures gracefully without try-catch:
 ```typescript
 const $ = createShell().asFluent();
 
-const result = await $`some-command-that-might-fail`.result();
+const result = await $('some-command-that-might-fail').result();
 
 if (!result.success) {
   console.error(`Command failed with exit code ${result.exitCode}`);
@@ -147,11 +131,11 @@ Split output into an array of lines:
 const $ = createShell().asFluent();
 
 // Get directory listing as lines
-const files = await $`ls -1 /tmp`.toLines();
+const files = await $('ls -1 /tmp').toLines();
 files.forEach(file => console.log(`File: ${file}`));
 
 // Read and process file lines
-const lines = await $`cat /etc/hosts`.toLines();
+const lines = await $('cat /etc/hosts').toLines();
 const nonEmpty = lines.filter(line => line.trim() !== '');
 ```
 
@@ -173,7 +157,7 @@ const packageSchema = z.object({
 });
 
 // Parse and validate (throws on error)
-const pkg = await $`cat package.json`.parse(packageSchema);
+const pkg = await $('cat package.json').parse(packageSchema);
 console.log(`Package: ${pkg.name}@${pkg.version}`);
 
 // API response example
@@ -183,7 +167,7 @@ const userSchema = z.object({
   email: z.string().email(),
 });
 
-const user = await $`curl -s https://api.example.com/user/1`.parse(userSchema);
+const user = await $('curl -s https://api.example.com/user/1').parse(userSchema);
 console.log(`User: ${user.username} (${user.email})`);
 ```
 
@@ -199,7 +183,7 @@ const schema = z.object({
   data: z.array(z.any()),
 });
 
-const result = await $`curl -s https://api.example.com/data`.safeParse(schema);
+const result = await $('curl -s https://api.example.com/data').safeParse(schema);
 
 if (result.success) {
   console.log('Data:', result.data.data);
@@ -220,7 +204,7 @@ Commands don't execute until consumed, and multiple consumptions share execution
 const $ = createShell().asFluent();
 
 // Create handle - command hasn't run yet
-const handle = $`echo expensive operation`;
+const handle = $('echo expensive operation');
 
 // First consumption - executes command
 const output1 = await handle;
@@ -244,14 +228,14 @@ const shell = createShell({ outputMode: 'capture' }); // Default
 const $ = shell.asFluent();
 
 // Capture mode: Output is captured for programmatic use
-const output = await $`npm run build`;
+const output = await $('npm run build');
 console.log(output);
 
 // All mode: Both capture AND stream to console
 const shell2 = createShell({ outputMode: 'all' });
 const $2 = shell2.asFluent();
 
-const result = await $2`npm test`.result();
+const result = await $2('npm test').result();
 // Test output appears in real-time on console
 // AND is available in result.stdout
 
@@ -278,17 +262,17 @@ const $ = shell.asFluent();
 console.log('🏗️  Building project...');
 
 // Clean
-await $`rm -rf dist`;
+await $('rm -rf dist');
 
 // Build
-const buildResult = await $`npm run build`.result();
+const buildResult = await $('npm run build').result();
 if (!buildResult.success) {
   console.error('❌ Build failed!');
   process.exit(1);
 }
 
 // Test
-await $`npm test`;
+await $('npm test');
 
 console.log('✅ Build complete!');
 ```
@@ -301,17 +285,17 @@ import { createShell } from '@thaitype/shell';
 const $ = createShell().asFluent();
 
 // Get current branch
-const branch = await $`git rev-parse --abbrev-ref HEAD`;
+const branch = await $('git rev-parse --abbrev-ref HEAD');
 console.log(`Current branch: ${branch}`);
 
 // Check for uncommitted changes
-const status = await $`git status --porcelain`.result();
+const status = await $('git status --porcelain').result();
 if (status.stdout.trim() !== '') {
   console.log('⚠️  You have uncommitted changes');
 }
 
 // Get recent commits as lines
-const commits = await $`git log --oneline -5`.toLines();
+const commits = await $('git log --oneline -5').toLines();
 console.log('Recent commits:');
 commits.forEach(commit => console.log(`  ${commit}`));
 ```
@@ -333,13 +317,13 @@ const pkgSchema = z.object({
   }).optional(),
 });
 
-const pkg = await $`cat package.json`.parse(pkgSchema);
+const pkg = await $('cat package.json').parse(pkgSchema);
 
 // Get Node version
-const nodeVersion = await $`node --version`;
+const nodeVersion = await $('node --version');
 
 // Get system info as lines
-const osInfo = await $`uname -a`.toLines();
+const osInfo = await $('uname -a').toLines();
 
 console.log(`Project: ${pkg.name}@${pkg.version}`);
 console.log(`Node: ${nodeVersion}`);
@@ -355,21 +339,21 @@ const $ = createShell().asFluent();
 
 async function deployApp() {
   // Test connection
-  const ping = await $`curl -s https://api.example.com/health`.result();
+  const ping = await $('curl -s https://api.example.com/health').result();
   if (!ping.success) {
     console.error('❌ API is not reachable');
     return false;
   }
 
   // Run tests
-  const tests = await $`npm test`.result();
+  const tests = await $('npm test').result();
   if (!tests.success) {
     console.error('❌ Tests failed');
     return false;
   }
 
   // Deploy
-  const deploy = await $`npm run deploy`.result();
+  const deploy = await $('npm run deploy').result();
   if (!deploy.success) {
     console.error('❌ Deployment failed');
     console.error(deploy.stderr);
@@ -398,11 +382,11 @@ const shell = createShell({
 const $ = shell.asFluent();
 
 // These commands will be logged but not executed
-await $`rm -rf node_modules`;
+await $('rm -rf node_modules');
 // Output: $ rm -rf node_modules
 // (nothing is actually deleted)
 
-await $`git push origin main`;
+await $('git push origin main');
 // Output: $ git push origin main
 // (nothing is actually pushed)
 
@@ -518,13 +502,10 @@ const shell = createShell({
 
 #### `shell.asFluent()`
 
-Returns a fluent shell function that supports tagged templates and function calls.
+Returns a fluent shell function that supports function calls.
 
 ```typescript
 const $ = shell.asFluent();
-
-// Tagged template
-await $`command`;
 
 // Function calls
 await $('command');
@@ -542,30 +523,30 @@ Handle returned by fluent API with lazy execution and memoization.
 
 **Direct await - Throwable:**
 ```typescript
-const output: string = await $`command`;
+const output: string = await $('command');
 ```
 
 **Methods:**
 
 - **`.result()`** - Non-throwable execution
   ```typescript
-  const result = await $`command`.result();
+  const result = await $('command').result();
   // result: { success: boolean, stdout: string, stderr: string, exitCode: number | undefined }
   ```
 
 - **`.toLines()`** - Split output into lines (throws on error)
   ```typescript
-  const lines: string[] = await $`command`.toLines();
+  const lines: string[] = await $('command').toLines();
   ```
 
 - **`.parse<T>(schema)`** - Parse and validate JSON (throws on error)
   ```typescript
-  const data: T = await $`command`.parse(schema);
+  const data: T = await $('command').parse(schema);
   ```
 
 - **`.safeParse<T>(schema)`** - Parse and validate JSON (never throws)
   ```typescript
-  const result = await $`command`.safeParse(schema);
+  const result = await $('command').safeParse(schema);
   // result: { success: true, data: T } | { success: false, error: Error[] }
   ```
 
@@ -666,7 +647,7 @@ const shell = createShell({
 });
 
 const $ = shell.asFluent();
-await $`npm install`;
+await $('npm install');
 // Commands logged via Winston with context
 ```
 

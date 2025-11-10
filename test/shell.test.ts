@@ -1030,84 +1030,11 @@ describe('Shell', () => {
     });
   });
 
-  describe('Fluent Shell API - Tagged Templates', () => {
-    it('should support tagged template basic usage', async () => {
-      const $ = createShell().asFluent();
-
-      const result = await $`echo hello`;
-
-      expect(result).toBe('hello');
-    });
-
-    it('should support tagged template with single interpolation', async () => {
-      const $ = createShell().asFluent();
-      const name = 'world';
-
-      const result = await $`echo hello ${name}`;
-
-      expect(result).toBe('hello world');
-    });
-
-    it('should support tagged template with multiple interpolations', async () => {
-      const $ = createShell().asFluent();
-      const a = 'foo';
-      const b = 'bar';
-      const c = 'baz';
-
-      const result = await $`echo ${a} ${b} ${c}`;
-
-      expect(result).toBe('foo bar baz');
-    });
-
-    it('should handle tagged template with number interpolation', async () => {
-      const $ = createShell().asFluent();
-      const num = 42;
-
-      const result = await $`echo ${num}`;
-
-      expect(result).toBe('42');
-    });
-
-    it('should handle tagged template with empty interpolation', async () => {
-      const $ = createShell().asFluent();
-      const empty = '';
-
-      const result = await $`echo test${empty}value`;
-
-      expect(result).toBe('testvalue');
-    });
-
-    it('should work with tagged template and toLines()', async () => {
-      const $ = createShell().asFluent();
-
-      const lines = await $`printf "a\nb\nc"`.toLines();
-
-      expect(lines).toEqual(['a', 'b', 'c']);
-    });
-
-    it('should work with tagged template and parse()', async () => {
-      const $ = createShell().asFluent();
-      const schema = z.object({
-        value: z.string(),
-      });
-
-      const result = await $`echo '{"value":"test"}'`.parse(schema);
-
-      expect(result.value).toBe('test');
-    });
-
-    it('should throw error for failing tagged template command', async () => {
-      const $ = createShell().asFluent();
-
-      await expect($`sh -c "exit 1"`).rejects.toThrow();
-    });
-  });
-
   describe('Fluent Shell API - .result() Non-throwable Execution', () => {
     it('should return success result for successful command', async () => {
       const $ = createShell().asFluent();
 
-      const result = await $`echo test`.result();
+      const result = await $('echo test').result();
 
       expect(result.success).toBe(true);
       expect(result.stdout).toBe('test');
@@ -1118,7 +1045,7 @@ describe('Shell', () => {
     it('should return failure result without throwing', async () => {
       const $ = createShell().asFluent();
 
-      const result = await $`sh -c "exit 1"`.result();
+      const result = await $('sh -c "exit 1"').result();
 
       expect(result.success).toBe(false);
       expect(result.exitCode).toBe(1);
@@ -1136,7 +1063,7 @@ describe('Shell', () => {
     it('should capture stderr in result', async () => {
       const $ = createShell().asFluent();
 
-      const result = await $`sh -c "echo error >&2; exit 1"`.result();
+      const result = await $('sh -c "echo error >&2; exit 1"').result();
 
       expect(result.success).toBe(false);
       expect(result.stderr).toBe('error');
@@ -1154,7 +1081,7 @@ describe('Shell', () => {
     it('should include both stdout and stderr on success', async () => {
       const $ = createShell().asFluent();
 
-      const result = await $`sh -c "echo out; echo err >&2"`.result();
+      const result = await $('sh -c "echo out; echo err >&2"').result();
 
       expect(result.success).toBe(true);
       expect(result.stdout).toBe('out');
@@ -1168,7 +1095,7 @@ describe('Shell', () => {
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
       // Create handle - should NOT execute yet
-      const handle = $`echo test`;
+      const handle = $('echo test');
 
       // No execution yet
       expect(mockDebug).not.toHaveBeenCalled();
@@ -1184,7 +1111,7 @@ describe('Shell', () => {
       const mockDebug = vi.fn();
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
-      const handle = $`echo test`;
+      const handle = $('echo test');
       expect(mockDebug).not.toHaveBeenCalled();
 
       const result = await handle;
@@ -1197,7 +1124,7 @@ describe('Shell', () => {
       const mockDebug = vi.fn();
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
-      const handle = $`echo test`;
+      const handle = $('echo test');
       expect(mockDebug).not.toHaveBeenCalled();
 
       const result = await handle.result();
@@ -1211,7 +1138,7 @@ describe('Shell', () => {
       const mockDebug = vi.fn();
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
-      const handle = $`echo test`;
+      const handle = $('echo test');
       expect(mockDebug).not.toHaveBeenCalled();
 
       const result = await handle.toLines();
@@ -1225,7 +1152,7 @@ describe('Shell', () => {
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
       const schema = z.object({ value: z.string() });
 
-      const handle = $`echo '{"value":"test"}'`;
+      const handle = $('echo \'{"value":"test"}\'');
       expect(mockDebug).not.toHaveBeenCalled();
 
       const result = await handle.parse(schema);
@@ -1240,7 +1167,7 @@ describe('Shell', () => {
       const mockDebug = vi.fn();
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
-      const handle = $`echo test`;
+      const handle = $('echo test');
 
       const result1 = await handle;
       const result2 = await handle;
@@ -1258,7 +1185,7 @@ describe('Shell', () => {
       const mockDebug = vi.fn();
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
-      const handle = $`echo test`;
+      const handle = $('echo test');
 
       const result1 = await handle;
       const result2 = await handle.result();
@@ -1275,7 +1202,7 @@ describe('Shell', () => {
       const mockDebug = vi.fn();
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
-      const handle = $`printf "a\nb"`;
+      const handle = $('printf "a\nb"');
 
       const result1 = await handle.result();
       const result2 = await handle.toLines();
@@ -1291,7 +1218,7 @@ describe('Shell', () => {
       const mockDebug = vi.fn();
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
 
-      const handle = $`echo '{"value":"test"}'`;
+      const handle = $('echo \'{"value":"test"}\'');
       const schema = z.object({ value: z.string() });
 
       const result1 = await handle;
@@ -1309,7 +1236,7 @@ describe('Shell', () => {
     it('should handle errors consistently across multiple consumptions', async () => {
       const $ = createShell().asFluent();
 
-      const handle = $`sh -c "exit 1"`;
+      const handle = $('sh -c "exit 1"');
 
       // First consumption throws
       await expect(handle).rejects.toThrow();
@@ -1323,22 +1250,6 @@ describe('Shell', () => {
       expect(result.exitCode).toBe(1);
     });
 
-    it('should memoize with tagged template interpolation', async () => {
-      const mockDebug = vi.fn();
-      const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
-      const name = 'world';
-
-      const handle = $`echo hello ${name}`;
-
-      const result1 = await handle;
-      const result2 = await handle;
-
-      expect(result1).toBe('hello world');
-      expect(result2).toBe('hello world');
-
-      // Should only execute once
-      expect(mockDebug).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('Fluent Shell API - safeParse() Non-throwable', () => {
@@ -1349,7 +1260,7 @@ describe('Shell', () => {
         version: z.string(),
       });
 
-      const result = await $`echo '{"name":"test","version":"1.0.0"}'`.safeParse(schema);
+      const result = await $('echo \'{"name":"test","version":"1.0.0"}\'').safeParse(schema);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1362,7 +1273,7 @@ describe('Shell', () => {
       const $ = createShell().asFluent();
       const schema = z.object({ value: z.string() });
 
-      const result = await $`sh -c "exit 1"`.safeParse(schema);
+      const result = await $('sh -c "exit 1"').safeParse(schema);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -1375,7 +1286,7 @@ describe('Shell', () => {
       const $ = createShell().asFluent();
       const schema = z.object({ value: z.string() });
 
-      const result = await $`true`.safeParse(schema);
+      const result = await $('true').safeParse(schema);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -1387,7 +1298,7 @@ describe('Shell', () => {
       const $ = createShell().asFluent();
       const schema = z.object({ value: z.string() });
 
-      const result = await $`echo "not valid json"`.safeParse(schema);
+      const result = await $('echo "not valid json"').safeParse(schema);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -1402,7 +1313,7 @@ describe('Shell', () => {
         count: z.number(),
       });
 
-      const result = await $`echo '{"name":"test","count":"not-a-number"}'`.safeParse(schema);
+      const result = await $('echo \'{"name":"test","count":"not-a-number"}\'').safeParse(schema);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -1443,7 +1354,7 @@ describe('Shell', () => {
         }),
       });
 
-      const result = await $`echo '{"user":{"name":"Alice","email":"alice@example.com"}}'`.safeParse(schema);
+      const result = await $('echo \'{"user":{"name":"Alice","email":"alice@example.com"}}\'').safeParse(schema);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1458,7 +1369,7 @@ describe('Shell', () => {
         items: z.array(z.string()),
       });
 
-      const result = await $`echo '{"items":["a","b","c"]}'`.safeParse(schema);
+      const result = await $('echo \'{"items":["a","b","c"]}\'').safeParse(schema);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1471,15 +1382,15 @@ describe('Shell', () => {
       const schema = z.object({ value: z.string() });
 
       // Command failure - should not throw
-      const result1 = await $`sh -c "exit 1"`.safeParse(schema);
+      const result1 = await $('sh -c "exit 1"').safeParse(schema);
       expect(result1.success).toBe(false);
 
       // Invalid JSON - should not throw
-      const result2 = await $`echo "{{{"`.safeParse(schema);
+      const result2 = await $('echo "{{{"').safeParse(schema);
       expect(result2.success).toBe(false);
 
       // Schema validation failure - should not throw
-      const result3 = await $`echo '{"value":123}'`.safeParse(schema);
+      const result3 = await $('echo \'{"value":123}\'').safeParse(schema);
       expect(result3.success).toBe(false);
 
       // All should have returned without throwing
@@ -1491,7 +1402,7 @@ describe('Shell', () => {
       const $ = createShell({ verbose: true, logger: { debug: mockDebug } }).asFluent();
       const schema = z.object({ value: z.string() });
 
-      const handle = $`echo '{"value":"test"}'`;
+      const handle = $('echo \'{"value":"test"}\'');
 
       // First call with safeParse
       const result1 = await handle.safeParse(schema);
@@ -1520,7 +1431,7 @@ describe('Shell', () => {
           uppercase: data.name.toUpperCase(),
         }));
 
-      const result = await $`echo '{"name":"hello"}'`.safeParse(schema);
+      const result = await $('echo \'{"name":"hello"}\'').safeParse(schema);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1534,7 +1445,7 @@ describe('Shell', () => {
       const shell = createShell({ outputMode: 'capture' });
       const $ = shell.asFluent();
 
-      const result = await $`echo hello`;
+      const result = await $('echo hello');
 
       expect(result).toBe('hello');
     });
@@ -1590,7 +1501,7 @@ describe('Shell', () => {
       const shell = createShell({ outputMode: 'all' });
       const $ = shell.asFluent();
 
-      const lines = await $`printf "line1\\nline2"`.toLines();
+      const lines = await $('printf "line1\\nline2"').toLines();
 
       expect(lines).toEqual(['line1', 'line2']);
     });
@@ -1600,7 +1511,7 @@ describe('Shell', () => {
       const $ = shell.asFluent();
       const schema = z.object({ value: z.string() });
 
-      const data = await $`echo '{"value":"test"}'`.parse(schema);
+      const data = await $('echo \'{"value":"test"}\'').parse(schema);
 
       expect(data.value).toBe('test');
     });
@@ -1637,15 +1548,6 @@ describe('Shell', () => {
       expect(result.stdout).toBe('override');
     });
 
-    it('should work with tagged templates in all mode', async () => {
-      const shell = createShell({ outputMode: 'all' });
-      const $ = shell.asFluent();
-      const name = 'world';
-
-      const result = await $`echo hello ${name}`;
-
-      expect(result).toBe('hello world');
-    });
 
     it('should handle options merging with outputMode override', async () => {
       const shell = createShell({ outputMode: 'capture', verbose: true });
@@ -1663,7 +1565,7 @@ describe('Shell', () => {
       const $ = shell.asFluent();
       const schema = z.object({ key: z.string() });
 
-      const result = await $`echo '{"key":"value"}'`.safeParse(schema);
+      const result = await $('echo \'{"key":"value"}\'').safeParse(schema);
 
       expect(result.success).toBe(true);
       if (result.success) {
