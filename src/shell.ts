@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { execa, type Options as ExecaOptions, ExecaError } from 'execa';
 import parseArgsStringToArgv from 'string-argv';
 import deepmerge from 'deepmerge';
-import { standardSafeValidate, standardValidate, type StandardResult } from './standard-schema.js';
+import { standardSafeValidate, standardValidate, type ValidationResult } from './standard-schema.js';
 
 /**
  * Output mode behavior for handling stdout/stderr.
@@ -12,6 +12,12 @@ import { standardSafeValidate, standardValidate, type StandardResult } from './s
  * - `'all'` - Both captures AND streams output simultaneously
  */
 export type OutputMode = 'capture' | 'live' | 'all';
+
+/**
+ * Output modes supported by FluentShell.
+ * Excludes 'live' mode since fluent operations require stdout for chaining and parsing.
+ */
+export type FluentOutputMode = Exclude<OutputMode, 'live'>;
 
 /**
  * Type utility to determine if an output mode captures output.
@@ -187,6 +193,19 @@ export interface RunOptions<Mode extends OutputMode = OutputMode>
     ShellExecaOptions {}
 
 /**
+ * Options for fluent shell command execution.
+ * Restricts outputMode to exclude 'live' mode.
+ *
+ * @template Mode - The output mode for this command (capture or all only)
+ */
+export type FluentRunOptions<Mode extends FluentOutputMode = FluentOutputMode> = Omit<
+  RunOptions<Mode>,
+  'outputMode'
+> & {
+  outputMode?: Mode;
+};
+
+/**
  * Strict result returned by `run()` method (throws on error).
  * Only includes stdout/stderr, as the command either succeeds or throws.
  *
@@ -218,9 +237,197 @@ export interface SafeResult<Capture extends boolean> extends StrictResult<Captur
  * @template Throw - Whether the method throws on error (true for run(), false for safeRun())
  * @template Mode - The output mode used for the command
  */
-export type RunResult<Throw extends boolean, Mode extends OutputMode> = Throw extends true
+export type ExecutionResult<Throw extends boolean, Mode extends OutputMode> = Throw extends true
   ? StrictResult<CaptureForMode<Mode>>
   : SafeResult<CaptureForMode<Mode>>;
+
+/**
+ * A handle for a command execution that can be awaited directly or have helper methods called on it.
+ *
+ * This type implements the PromiseLike interface, allowing it to be awaited directly to get stdout,
+ * while also providing helper methods for common transformations.
+ *
+ * @example Direct await
+ * ```typescript
+ * const result = await $('echo hello'); // Returns 'hello'
+ * ```
+ *
+ * @example Using toLines()
+ * ```typescript
+ * const lines = await $('ls -la').toLines(); // Returns array of lines
+ * ```
+ *
+ * @example Using parse()
+ * ```typescript
+ * const data = await $('echo \'{"key":"value"}\'').parse(schema);
+ * ```
+ */
+export type CommandHandle = PromiseLike<string> & {
+  /**
+   * Split stdout by newlines and return as array of strings.
+   * Handles both Unix (\n) and Windows (\r\n) line endings.
+   *
+   * @returns Promise resolving to array of lines from stdout
+   */
+  toLines(): Promise<string[]>;
+
+  /**
+   * Parse stdout as JSON and validate with the provided Standard Schema V1.
+   * The schema must implement the Standard Schema V1 interface (e.g., Zod schemas).
+   *
+   * @template T - A Standard Schema V1 schema type
+   * @param schema - A Standard Schema V1 compatible schema
+   * @returns Promise resolving to the parsed and validated data
+   *
+   * @see https://github.com/standard-schema/standard-schema
+   */
+  parse<T extends StandardSchemaV1>(schema: T): Promise<StandardSchemaV1.InferOutput<T>>;
+};
+
+/**
+ * A function that creates CommandHandle instances for fluent command execution.
+ *
+ * @param command - Command to execute, as string or array of arguments
+ * @returns A CommandHandle that can be awaited or have helper methods called
+ */
+export type FluentShellFn = (command: string | string[]) => CommandHandle;
+
+/**
+ * Command handle with lazy execution and memoization.
+ * Extends CommandHandle with `.result()` method for non-throwable execution.
+ *
+ * Key features:
+ * - **Lazy execution**: Command doesn't run until first consumption (await, .result(), .toLines(), .parse())
+ * - **Memoization**: Multiple consumptions share the same execution
+ * - **Throwable path**: `await handle` throws on non-zero exit code
+ * - **Non-throwable path**: `await handle.result()` returns result with success flag
+ *
+ * @example Throwable execution
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * try {
+ *   const output = await $`exit 1`; // Throws error
+ * } catch (error) {
+ *   console.error(error);
+ * }
+ * ```
+ *
+ * @example Non-throwable execution
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const r = await $`exit 1`.result(); // Doesn't throw
+ * if (!r.success) {
+ *   console.error(r.exitCode, r.stderr);
+ * }
+ * ```
+ *
+ * @example Memoization
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const handle = $`echo test`;
+ * const a = await handle;           // Executes once
+ * const b = await handle;           // Reuses same execution
+ * const c = await handle.result();  // Still same execution
+ * ```
+ */
+export type LazyCommandHandle = PromiseLike<string> & {
+  /**
+   * Non-throwable execution - returns result object with success flag.
+   * This method never throws, even if the command fails.
+   *
+   * @returns Promise resolving to ExecutionResult with success, stdout, stderr, and exitCode
+   */
+  result(): Promise<ExecutionResult<false, FluentOutputMode>>;
+
+  /**
+   * Split stdout by newlines and return as array of strings.
+   * Handles both Unix (\n) and Windows (\r\n) line endings.
+   * Throws if command fails.
+   *
+   * @returns Promise resolving to array of lines from stdout
+   */
+  toLines(): Promise<string[]>;
+
+  /**
+   * Parse stdout as JSON and validate with the provided schema.
+   * The schema must have a `parse(data: any): T` method (compatible with Zod and other validators).
+   * Throws if command fails or if JSON parsing/validation fails.
+   *
+   * @template T - The inferred output type from the schema
+   * @param schema - A schema object with a parse method (e.g., Zod schema)
+   * @returns Promise resolving to the parsed and validated data
+   */
+  parse<T extends StandardSchemaV1>(schema: T): Promise<StandardSchemaV1.InferOutput<T>>;
+
+  /**
+   * Parse stdout as JSON and validate with schema (non-throwable).
+   * Returns ValidationResult instead of throwing on failure.
+   *
+   * This method never throws, even if:
+   * - The command fails
+   * - There's no stdout
+   * - JSON parsing fails
+   * - Schema validation fails
+   *
+   * @template T - A Standard Schema V1 schema type
+   * @param schema - A Standard Schema V1 compatible schema
+   * @returns Promise resolving to ValidationResult with either data or error
+   *
+   * @example
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const result = await $`cat config.json`.safeParse(ConfigSchema);
+   * if (result.success) {
+   *   console.log('Config:', result.data);
+   * } else {
+   *   console.error('Validation failed:', result.error);
+   * }
+   * ```
+   */
+  safeParse<T extends StandardSchemaV1>(schema: T): Promise<ValidationResult<StandardSchemaV1.InferOutput<T>>>;
+};
+
+/**
+ * Function that supports string and array command execution.
+ * Returned by `shell.asFluent()`.
+ *
+ * Supports two call signatures:
+ * 1. String command: `$('echo hello')` or `$('echo hello', { outputMode: 'all' })`
+ * 2. Argv array: `$(['echo', 'hello'])` or `$(['echo', 'hello'], { outputMode: 'all' })`
+ *
+ * Note: FluentShell does not support 'live' mode. Use 'capture' or 'all' only.
+ *
+ * @example String command
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const result = await $('echo hello');
+ * ```
+ *
+ * @example String command with template literal interpolation
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const name = 'world';
+ * const result = await $(`echo hello ${name}`);
+ * ```
+ *
+ * @example Function call with options
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const result = await $('echo hello', { outputMode: 'all' });
+ * ```
+ *
+ * @example Array call with options (recommended for complex arguments)
+ * ```typescript
+ * const $ = createShell().asFluent();
+ * const result = await $(['echo', 'file with spaces.txt'], { outputMode: 'all' });
+ * ```
+ */
+export interface DollarFunction {
+  /**
+   * String or array command call with optional fluent options
+   */
+  (command: string | string[], options?: FluentRunOptions): LazyCommandHandle;
+}
 
 /**
  * Factory function to create a new Shell instance with type inference.
@@ -409,7 +616,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   public async execute<Throw extends boolean = true, Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode> & { throwOnError?: Throw }
-  ): Promise<RunResult<Throw, Mode>> {
+  ): Promise<ExecutionResult<Throw, Mode>> {
     const args = Array.isArray(cmd) ? cmd : parseArgsStringToArgv(cmd);
 
     const [program, ...cmdArgs] = args;
@@ -451,7 +658,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     }
 
     if (dryRun) {
-      return { stdout: '', stderr: '', exitCode: 0, success: true } as RunResult<Throw, Mode>;
+      return { stdout: '', stderr: '', exitCode: 0, success: true } as ExecutionResult<Throw, Mode>;
     }
 
     try {
@@ -462,7 +669,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stderr: result.stderr ? String(result.stderr) : null,
         exitCode: result.exitCode,
         success: result.exitCode === 0,
-      } as RunResult<Throw, Mode>;
+      } as ExecutionResult<Throw, Mode>;
     } catch (error: unknown) {
       if (error instanceof ExecaError) {
         if (options?.throwOnError) {
@@ -480,7 +687,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         stderr: null,
         exitCode: undefined,
         success: false,
-      } as RunResult<Throw, Mode>;
+      } as ExecutionResult<Throw, Mode>;
     }
   }
 
@@ -513,7 +720,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   public async run<Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode>
-  ): Promise<RunResult<true, Mode>> {
+  ): Promise<ExecutionResult<true, Mode>> {
     return this.execute<true, Mode>(cmd, { ...options, throwOnError: true });
   }
 
@@ -546,7 +753,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
   public async safeRun<Mode extends OutputMode = DefaultMode>(
     cmd: string | string[],
     options?: RunOptions<Mode>
-  ): Promise<RunResult<false, Mode>> {
+  ): Promise<ExecutionResult<false, Mode>> {
     return this.execute<false, Mode>(cmd, { ...options, throwOnError: false });
   }
 
@@ -574,7 +781,7 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
     cmd: string | string[],
     schema: T,
     options?: RunOptions<Mode>
-  ): Promise<StandardResult<StandardSchemaV1.InferOutput<T>>> {
+  ): Promise<ValidationResult<StandardSchemaV1.InferOutput<T>>> {
     const result = await this.safeRun<Mode>(cmd, options);
     const verbose = options?.verbose ?? this.verbose;
     const fullCommand = Array.isArray(cmd) ? cmd.join(' ') : cmd;
@@ -601,5 +808,243 @@ export class Shell<DefaultMode extends OutputMode = 'capture'> {
         error: [{ message: 'Unable to Parse JSON: ' + (e instanceof Error ? e.message : String(e)) + verboseInfo }],
       };
     }
+  }
+
+  /**
+   * Validates that the output mode is compatible with FluentShell.
+   * Throws an error if 'live' mode is used.
+   *
+   * @param mode - The output mode to validate
+   * @throws {Error} If mode is 'live'
+   *
+   * @internal
+   */
+  private assertFluentMode(mode: OutputMode): asserts mode is FluentOutputMode {
+    if (mode === 'live') {
+      throw new Error(
+        "FluentShell does not support outputMode: 'live'. " +
+          "Use 'capture' or 'all', or call shell.run(..., { outputMode: 'live' }) instead."
+      );
+    }
+  }
+
+  /**
+   * Create a lazy command handle with memoized execution.
+   * The command doesn't execute until first consumption (await, .result(), .toLines(), .parse()).
+   * Multiple consumptions share the same execution result.
+   *
+   * @param command - Command to execute (string or array)
+   * @param options - Fluent execution options (validated to not use 'live' mode)
+   * @returns LazyCommandHandle with deferred execution
+   *
+   * @internal
+   */
+  private createLazyHandle(command: string | string[], options: FluentRunOptions<FluentOutputMode>): LazyCommandHandle {
+    // Memoized execution promise - null until first consumption
+    let executionPromise: Promise<ExecutionResult<false, FluentOutputMode>> | null = null;
+
+    // Lazy executor - runs command once and memoizes result
+    const start = (): Promise<ExecutionResult<false, FluentOutputMode>> => {
+      if (executionPromise === null) {
+        executionPromise = this.safeRun(command, options as RunOptions<FluentOutputMode>).then(result => ({
+          success: result.success,
+          stdout: result.stdout ?? '',
+          stderr: result.stderr ?? '',
+          exitCode: result.exitCode,
+        }));
+      }
+      return executionPromise;
+    };
+
+    const handle: Partial<LazyCommandHandle> = {};
+
+    // Throwable path: await handle
+    // Checks success and throws error if command failed
+    handle.then = (onFulfilled, onRejected) => {
+      return start()
+        .then(result => {
+          if (!result.success) {
+            // Throw error based on throwMode setting
+            if (this.throwMode === 'simple') {
+              const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+              throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
+            } else {
+              // For 'raw' mode, we'd need the original ExecaError
+              // Since we're using safeRun, we'll throw a simplified error
+              throw new Error(`Command failed with exit code ${result.exitCode}: ${result.stderr}`);
+            }
+          }
+          return result.stdout;
+        })
+        .then(onFulfilled, onRejected);
+    };
+
+    // Non-throwable path: handle.result()
+    // Returns CommandResult with success flag, never throws
+    handle.result = () => start();
+
+    // Helper method: split stdout into lines
+    // Throws if command failed
+    handle.toLines = () =>
+      start().then(result => {
+        if (!result.success) {
+          const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+          throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
+        }
+        if (!result.stdout) return [];
+        return result.stdout.split(/\r?\n/);
+      });
+
+    // Helper method: parse JSON and validate with schema
+    // Throws if command failed or if JSON parsing/validation fails
+    handle.parse = <T extends StandardSchemaV1>(schema: T): Promise<StandardSchemaV1.InferOutput<T>> => {
+      return start().then(result => {
+        if (!result.success) {
+          const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+          throw new Error(`Command failed: ${args.join(' ')}\nExit code: ${result.exitCode}\n${result.stderr}`);
+        }
+        return standardValidate(schema, JSON.parse(result.stdout ?? '{}'));
+      });
+    };
+
+    // Helper method: parse JSON and validate with schema (non-throwable)
+    // Returns ValidationResult instead of throwing
+    handle.safeParse = <T extends StandardSchemaV1>(
+      schema: T
+    ): Promise<ValidationResult<StandardSchemaV1.InferOutput<T>>> => {
+      return start().then(result => {
+        const args = Array.isArray(command) ? command : parseArgsStringToArgv(command);
+        const commandStr = args.join(' ');
+
+        // Check if command failed
+        if (!result.success) {
+          return {
+            success: false,
+            error: [
+              {
+                message: `Command failed: ${commandStr}\nExit code: ${result.exitCode}\n${result.stderr}`,
+              },
+            ],
+          };
+        }
+
+        // Check if there's no output
+        if (!result.stdout) {
+          return {
+            success: false,
+            error: [
+              {
+                message: `The command produced no output to validate: ${commandStr}`,
+              },
+            ],
+          };
+        }
+
+        // Try to parse JSON
+        try {
+          const parsed = JSON.parse(result.stdout);
+          // Use standardSafeValidate for schema validation (non-throwing)
+          return standardSafeValidate(schema, parsed);
+        } catch (e: unknown) {
+          return {
+            success: false,
+            error: [
+              {
+                message: `Unable to parse JSON: ${e instanceof Error ? e.message : String(e)}\nCommand: ${commandStr}`,
+              },
+            ],
+          };
+        }
+      });
+    };
+
+    return handle as LazyCommandHandle;
+  }
+
+  /**
+   * Create a fluent shell function with lazy execution support.
+   *
+   * Returns a function that supports:
+   * - Function calls: `$('echo hello')` or `$(['echo', 'hello'], { outputMode: 'all' })`
+   * - Lazy execution: command doesn't run until consumed
+   * - Memoization: multiple consumptions share one execution
+   * - Non-throwable path: `.result()` returns result with success flag
+   *
+   * Note: FluentShell requires stdout for chaining, so 'live' mode is not supported.
+   * If the shell instance has `outputMode: 'live'`, this method will throw an error.
+   *
+   * @returns DollarFunction that supports function calls
+   *
+   * @throws {Error} If shell instance has `outputMode: 'live'`
+   *
+   * @example Basic usage
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const result = await $('echo hello');
+   * ```
+   *
+   * @example Function call with mode override
+   * ```typescript
+   * const shell = createShell({ outputMode: 'capture' });
+   * const $ = shell.asFluent();
+   * const result = await $('echo hello', { outputMode: 'all' }); // Uses 'all' mode
+   * ```
+   *
+   * @example Array syntax for precise arguments
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const result = await $(['echo', 'file with spaces.txt']);
+   * ```
+   *
+   * @example Error case - live mode not supported
+   * ```typescript
+   * const shell = createShell({ outputMode: 'live' });
+   * shell.asFluent(); // ❌ Throws error
+   * ```
+   *
+   * @example Non-throwable execution
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const r = await $('sh -c "exit 1"').result();
+   * if (!r.success) {
+   *   console.error(`Failed with exit code ${r.exitCode}`);
+   * }
+   * ```
+   *
+   * @example Lazy + memoization
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const handle = $('echo test');
+   * const a = await handle;           // Executes once
+   * const b = await handle;           // Reuses execution
+   * const c = await handle.result();  // Still same execution
+   * ```
+   *
+   * @example Helper methods
+   * ```typescript
+   * const $ = createShell().asFluent();
+   * const lines = await $('ls -la').toLines();
+   * const data = await $('cat package.json').parse(schema);
+   * ```
+   */
+  public asFluent(): DollarFunction {
+    // Validate shell-level outputMode
+    this.assertFluentMode(this.outputMode);
+
+    return ((command: string | string[], options?: FluentRunOptions): LazyCommandHandle => {
+      // Determine effective output mode (options override shell default)
+      const effectiveMode = (options?.outputMode ?? this.outputMode) as OutputMode;
+
+      // Validate effective mode
+      this.assertFluentMode(effectiveMode);
+
+      // Create lazy handle with effective options
+      const effectiveOptions: FluentRunOptions<FluentOutputMode> = {
+        ...(options ?? {}),
+        outputMode: effectiveMode,
+      };
+
+      return this.createLazyHandle(command, effectiveOptions);
+    }) as DollarFunction;
   }
 }
