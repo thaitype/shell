@@ -1,5 +1,11 @@
 # @thaitype/shell
 
+## 3.0.0
+
+### Major Changes
+
+- f5b5d6c: Introduce Fluent Shell API for an elegant, chainable interface for shell command
+
 ## 2.0.0
 
 ### Major Changes
